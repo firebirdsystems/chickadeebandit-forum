@@ -1,12 +1,6 @@
-// Shared utilities (memberColor, initial, isAdult, formatRelativeDate) live in /hub-sdk.js.
-// esc is redefined here so this module is self-contained for unit tests.
-export function esc(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+// Shared utilities — sourced from shared.js (mirrors hub-sdk.js) for testability.
+import { AVATAR_COLORS, memberColor, initial, esc, isAdult, formatRelativeDate } from "./shared.js";
+export { AVATAR_COLORS, memberColor, initial, esc, isAdult, formatRelativeDate };
 
 // ── Markdown ───────────────────────────────────────────────────────────────────
 // Exported for unit testing; called by renderMarkdown internally.
