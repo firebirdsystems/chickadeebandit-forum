@@ -7,13 +7,29 @@
   "runtime": "static",
   "storage": "db",
   "category": "family",
-  "tags": ["forum", "discussion", "threads", "markdown"],
-  "publishes": ["forum.post.created"],
-  "alert_on": ["forum.post.created"],
-  "nav": { "label": "Forum", "icon": "💬" },
-  "widget": { "label": "Forum", "size": "medium" },
+  "tags": [
+    "forum",
+    "discussion",
+    "threads",
+    "markdown"
+  ],
+  "publishes": [
+    "forum.post.created"
+  ],
+  "alert_on": [
+    "forum.post.created"
+  ],
+  "nav": {
+    "label": "Forum"
+  },
+  "widget": {
+    "label": "Forum",
+    "size": "medium"
+  },
   "data_access": {
-    "reads": ["family.members"],
+    "reads": [
+      "family.members"
+    ],
     "writes": []
   },
   "permissions": {
@@ -24,5 +40,6 @@
     "max_db_bytes": 10485760,
     "max_store_reads_per_day": 2000,
     "max_store_writes_per_day": 500
-  }
+  },
+  "icon": "💬"
 }
