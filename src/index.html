@@ -431,11 +431,11 @@ async function setupSchema() {
   const now = new Date().toISOString();
   for (const c of DEFAULT_CATEGORIES) {
     await dbq(
-      `INSERT OR IGNORE INTO categories (id, name, color, position, created_at) VALUES (?,?,?,?,?)`,
+      `INSERT INTO categories (id, name, color, position, created_at) VALUES (?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,
       [c.id, c.name, c.color, c.position, now]
     );
   }
-  await dbq(`INSERT OR IGNORE INTO forum_settings (key, value) VALUES ('auto_delete_days', '90')`);
+  await dbq(`INSERT INTO forum_settings (key, value) VALUES ('auto_delete_days', '90') ON CONFLICT (key) DO NOTHING`);
 }
 
 // Returns the configured auto-delete threshold in days (0 = disabled).
@@ -445,7 +445,7 @@ async function getAutoDeleteDays() {
 }
 
 async function saveAutoDeleteDays(days) {
-  await dbq(`INSERT OR REPLACE INTO forum_settings (key, value) VALUES ('auto_delete_days', ?)`, [String(days)]);
+  await dbq(`INSERT INTO forum_settings (key, value) VALUES ('auto_delete_days', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [String(days)]);
 }
 
 // Delete threads (and their replies/reactions) older than the configured threshold.
@@ -567,8 +567,7 @@ async function toggleReaction(targetId, targetType, emoji) {
     );
   } else {
     await dbq(
-      `INSERT OR IGNORE INTO reactions (id, target_id, target_type, emoji, author_id)
-       VALUES (?,?,?,?,?)`,
+      `INSERT INTO reactions (id, target_id, target_type, emoji, author_id) VALUES (?,?,?,?,?) ON CONFLICT (target_id, emoji, author_id) DO NOTHING`,
       [uuid(), targetId, targetType, emoji, currentMember.id]
     );
   }
