@@ -404,38 +404,7 @@ function uuid() { return crypto.randomUUID(); }
 
 // ── Schema setup ──────────────────────────────────────────────────────────────
 async function setupSchema() {
-  await dbq(`CREATE TABLE IF NOT EXISTS categories (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL DEFAULT '#6b7280',
-    position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
-  )`);
-  await dbq(`CREATE TABLE IF NOT EXISTS threads (
-    id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL,
-    category_id TEXT, author_id TEXT NOT NULL, author_name TEXT NOT NULL,
-    pinned INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-  )`);
-  await dbq(`CREATE TABLE IF NOT EXISTS replies (
-    id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, body TEXT NOT NULL,
-    author_id TEXT NOT NULL, author_name TEXT NOT NULL, created_at TEXT NOT NULL
-  )`);
-  await dbq(`CREATE TABLE IF NOT EXISTS reactions (
-    id TEXT PRIMARY KEY, target_id TEXT NOT NULL, target_type TEXT NOT NULL,
-    emoji TEXT NOT NULL, author_id TEXT NOT NULL,
-    UNIQUE(target_id, emoji, author_id)
-  )`);
-  await dbq(`CREATE TABLE IF NOT EXISTS forum_settings (
-    key TEXT PRIMARY KEY, value TEXT NOT NULL
-  )`);
-
-  // Seed defaults
-  const now = new Date().toISOString();
-  for (const c of DEFAULT_CATEGORIES) {
-    await dbq(
-      `INSERT INTO categories (id, name, color, position, created_at) VALUES (?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,
-      [c.id, c.name, c.color, c.position, now]
-    );
-  }
-  await dbq(`INSERT INTO forum_settings (key, value) VALUES ('auto_delete_days', '90') ON CONFLICT (key) DO NOTHING`);
+  // Schema managed by hub migrations (migrations/001_init.sql)
 }
 
 // Returns the configured auto-delete threshold in days (0 = disabled).
