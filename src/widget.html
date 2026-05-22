@@ -141,21 +141,6 @@ async function dbq(sql, params = []) {
 }
 
 async function load() {
-  // Schema might not exist yet if forum was never opened
-  await dbq(`CREATE TABLE IF NOT EXISTS categories (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL DEFAULT '#6b7280',
-    position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
-  )`);
-  await dbq(`CREATE TABLE IF NOT EXISTS threads (
-    id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL,
-    category_id TEXT, author_id TEXT NOT NULL, author_name TEXT NOT NULL,
-    pinned INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-  )`);
-  await dbq(`CREATE TABLE IF NOT EXISTS replies (
-    id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, body TEXT NOT NULL,
-    author_id TEXT NOT NULL, author_name TEXT NOT NULL, created_at TEXT NOT NULL
-  )`);
-
   const [{ rows: threads }, { rows: categories }] = await Promise.all([
     dbq(`SELECT t.id, t.title, t.pinned, t.category_id, t.author_name, t.created_at,
           (SELECT COUNT(*) FROM replies WHERE thread_id = t.id) AS reply_count
