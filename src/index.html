@@ -350,7 +350,7 @@
 </div>
 
 <script type="module">
-import { memberColor, initial, esc, isAdult, formatRelativeDate } from "/hub-sdk.js";
+import { memberColor, initial, esc, isAdult, formatRelativeDate, hubConfirm } from "/hub-sdk.js";
 import {
   renderMarkdown, applyInline, stripMarkdown,
   groupReactions, hasReacted, reactionSummary, sortThreads,
@@ -556,7 +556,7 @@ async function togglePin(threadId) {
 }
 
 async function deleteThread(threadId) {
-  if (!confirm("Delete this thread and all its replies? This cannot be undone.")) return;
+  if (!await hubConfirm({ message: "Delete this thread?", description: "The thread and all its replies will be permanently removed.", confirmLabel: "Delete thread", destructive: true })) return;
   await dbq(`DELETE FROM reactions WHERE target_id = ?`, [threadId]);
   await dbq(`DELETE FROM reactions WHERE target_id IN (SELECT id FROM replies WHERE thread_id=?)`, [threadId]);
   await dbq(`DELETE FROM replies WHERE thread_id = ?`, [threadId]);
@@ -565,7 +565,7 @@ async function deleteThread(threadId) {
 }
 
 async function deleteReply(replyId) {
-  if (!confirm("Delete this reply?")) return;
+  if (!await hubConfirm({ message: "Delete this reply?", confirmLabel: "Delete", destructive: true })) return;
   await dbq(`DELETE FROM reactions WHERE target_id=?`, [replyId]);
   await dbq(`DELETE FROM replies WHERE id=?`, [replyId]);
   await loadThread(currentThread.id);
@@ -592,7 +592,7 @@ async function addCategory(name, color) {
 }
 
 async function deleteCategory(id) {
-  if (!confirm("Delete this category? Threads in it will become uncategorised.")) return;
+  if (!await hubConfirm({ message: "Delete this category?", description: "Threads in it will become uncategorised.", confirmLabel: "Delete category", destructive: true })) return;
   await dbq(`UPDATE threads SET category_id=NULL WHERE category_id=?`, [id]);
   await dbq(`DELETE FROM categories WHERE id=?`, [id]);
   await loadCategories();
