@@ -376,6 +376,7 @@ const DEFAULT_CATEGORIES = [
 // ── State ─────────────────────────────────────────────────────────────────────
 let members        = [];
 let currentMember  = null;
+let pendingDeepLinkThreadId = null;
 let view           = "list";      // "list" | "thread"
 let threads        = [];
 let currentThread  = null;
@@ -457,9 +458,7 @@ async function loadCategories() {
 }
 
 async function loadThreads() {
-  const catClause = categoryFilter
-    ? `WHERE t.category_id = ?`
-    : "";
+  const catClause = categoryFilter ? `WHERE t.category_id = ?` : "";
   const params = categoryFilter ? [categoryFilter] : [];
   const { rows } = await dbq(`
     SELECT t.*,
@@ -515,6 +514,15 @@ async function createThread(title, body, categoryId) {
     fetch("/api/events", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source_app_id: APP_ID, type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: title.trim() } }),
+    }).catch(() => {});
+    fetch("/api/activity", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "message_posted",
+        actor: currentMember.name,
+        description: `${currentMember.name} started a new thread: "${title.trim().slice(0, 60)}"`,
+        metadata: { deepLink: { appId: APP_ID, params: { threadId: id } } },
+      }),
     }).catch(() => {});
   }
   return id;
@@ -1086,7 +1094,13 @@ window.saveRetention = async function() {
 // ── Global window actions ─────────────────────────────────────────────────────
 window.selectMember = function(id) {
   currentMember = members.find(m => m.id === id) ?? null;
-  render();
+  if (pendingDeepLinkThreadId) {
+    const tid = pendingDeepLinkThreadId;
+    pendingDeepLinkThreadId = null;
+    openThread(tid);
+  } else {
+    render();
+  }
 };
 window.switchMember = function() {
   if (HUB_MEMBER) return;
@@ -1145,6 +1159,17 @@ function showError(el, msg) {
   el.style.display = "block";
 }
 
+// ── Deep link ─────────────────────────────────────────────────────────────────
+function handleDeepLink() {
+  const threadId = new URLSearchParams(window.location.search).get("threadId");
+  if (!threadId) return;
+  if (currentMember) {
+    openThread(threadId);
+  } else {
+    pendingDeepLinkThreadId = threadId;
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async () => {
   await Promise.all([loadMembers(), setupSchema()]);
@@ -1158,6 +1183,7 @@ function showError(el, msg) {
     };
   }
   render();
+  handleDeepLink();
 })();
 </script>
 </body>
