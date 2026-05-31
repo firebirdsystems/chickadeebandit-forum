@@ -153,6 +153,10 @@ async function load() {
   render(threads, categories);
 }
 
+function navigate(params = {}) {
+  window.parent.postMessage({ type: "hub:open", appId: APP_ID, params }, "*");
+}
+
 function render(threads, categories) {
   const catMap = Object.fromEntries(categories.map(c => [c.id, c]));
 
@@ -165,7 +169,7 @@ function render(threads, categories) {
   if (threads.length === 0) {
     rows = `<div class="empty">
       <span>No threads yet</span>
-      <a href="/run/${APP_ID}" style="color:#111827;font-weight:600;font-size:11px">Start a discussion →</a>
+      <button onclick="navigate()" style="color:#111827;font-weight:600;font-size:11px;background:none;border:none;cursor:pointer">Start a discussion →</button>
     </div>`;
   } else {
     rows = `<div class="thread-list">
@@ -177,7 +181,7 @@ function render(threads, categories) {
         const pin  = t.pinned ? `<span class="pin-icon">📌</span>` : "";
         const cnt  = Number(t.reply_count);
         return `
-          <a class="thread-row" href="/run/${APP_ID}">
+          <button class="thread-row" onclick="navigate({threadId:'${t.id}'})" style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #f3f4f6;">
             ${dot}
             <div class="thread-main">
               <div class="thread-title">${pin}${esc(t.title)}</div>
@@ -188,15 +192,15 @@ function render(threads, categories) {
               </div>
             </div>
             <span class="reply-count">${cnt} ${cnt === 1 ? "reply" : "replies"}</span>
-          </a>`;
+          </button>`;
       }).join("")}
     </div>`;
   }
 
   const footer = `
     <div class="footer">
-      <a class="open-link" href="/run/${APP_ID}">View all →</a>
-      <a class="new-link" href="/run/${APP_ID}">+ New thread</a>
+      <button class="open-link" onclick="navigate()" style="background:none;border:none;cursor:pointer;">View all →</button>
+      <button class="new-link" onclick="navigate()" style="cursor:pointer;">+ New thread</button>
     </div>`;
 
   document.body.innerHTML = header + rows + footer;

@@ -508,7 +508,7 @@ async function createThread(title, body, categoryId) {
       body: JSON.stringify({
         authorName: "Forum",
         body: `💬 ${currentMember.name} started a new thread: "${title.trim().slice(0, 60)}"`,
-        url: `/run/${APP_ID}`,
+        url: `/run/${APP_ID}?threadId=${id}`,
       }),
     }).catch(() => {});
     fetch(`/run/${APP_ID}/api/events`, {
