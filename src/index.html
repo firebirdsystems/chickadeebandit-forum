@@ -507,14 +507,6 @@ async function createThread(title, body, categoryId) {
   );
   // Post activity to hub
   if (CONTEXT) {
-    fetch("/api/messages", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        authorName: "Forum",
-        body: `💬 ${currentMember.name} started a new thread: "${title.trim().slice(0, 60)}"`,
-        url: `/run/${APP_ID}?threadId=${id}`,
-      }),
-    }).catch(() => {});
     fetch(`/run/${APP_ID}/api/events`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: title.trim() } }),
