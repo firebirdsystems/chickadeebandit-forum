@@ -511,9 +511,9 @@ async function createThread(title, body, categoryId) {
         url: `/run/${APP_ID}`,
       }),
     }).catch(() => {});
-    fetch("/api/events", {
+    fetch(`/run/${APP_ID}/api/events`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source_app_id: APP_ID, type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: title.trim() } }),
+      body: JSON.stringify({ type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: title.trim() } }),
     }).catch(() => {});
     fetch("/api/activity", {
       method: "POST", headers: { "Content-Type": "application/json" },
