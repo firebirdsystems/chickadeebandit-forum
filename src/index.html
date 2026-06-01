@@ -419,7 +419,7 @@ async function getAutoDeleteDays() {
 }
 
 async function saveAutoDeleteDays(days) {
-  await dbq(`INSERT INTO forum_settings (key, value) VALUES ('auto_delete_days', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [String(days)]);
+  await dbq(`INSERT INTO forum_settings (key, value) VALUES ('auto_delete_days', ?) ON CONFLICT (household_id, key) DO UPDATE SET value = EXCLUDED.value`, [String(days)]);
 }
 
 // Delete threads (and their replies/reactions) older than the configured threshold.
