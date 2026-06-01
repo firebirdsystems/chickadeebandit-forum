@@ -297,21 +297,6 @@
     .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
     .modal-actions .btn { flex: 1; justify-content: center; }
 
-    /* ── Who screen ── */
-    #who-screen { text-align: center; padding: 48px 16px; }
-    #who-screen h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 6px; }
-    #who-screen p  { color: var(--muted); margin-bottom: 28px; }
-    .member-grid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-      gap: 10px; max-width: 400px; margin: 0 auto;
-    }
-    .member-btn {
-      display: flex; flex-direction: column; align-items: center; gap: 8px;
-      padding: 18px 10px; background: var(--card); border: 2px solid var(--border);
-      border-radius: var(--radius); cursor: pointer; font-size: 0.85rem;
-      font-weight: 600; color: var(--text); transition: all .15s;
-    }
-    .member-btn:hover { border-color: var(--accent); background: var(--accent-light); }
     .avatar-lg {
       width: 44px; height: 44px; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
@@ -380,7 +365,6 @@ const DEFAULT_CATEGORIES = [
 // ── State ─────────────────────────────────────────────────────────────────────
 let members        = [];
 let currentMember  = null;
-let pendingDeepLinkThreadId = null;
 let view           = "list";      // "list" | "thread"
 let threads        = [];
 let currentThread  = null;
@@ -663,23 +647,6 @@ function mdToolbar(textareaId) {
 }
 
 // ── Views ─────────────────────────────────────────────────────────────────────
-function renderWhoScreen() {
-  document.getElementById("root").innerHTML = `
-    <div id="who-screen">
-      <div style="font-size:2.5rem;margin-bottom:12px">💬</div>
-      <h2>Family Forum</h2>
-      <p>Discussions for the whole household — who are you?</p>
-      <div class="member-grid">
-        ${members.map(m => `
-          <button class="member-btn" onclick="selectMember('${m.id}')">
-            <div class="avatar-lg" style="background:${memberColor(m.id)}">${initial(m.name)}</div>
-            <span>${esc(m.name)}</span>
-          </button>
-        `).join("")}
-      </div>
-    </div>`;
-}
-
 function renderThreadList() {
   const sorted = sortThreads(threads);
   const catBadge = cat => cat
@@ -743,7 +710,6 @@ function renderThreadList() {
       <div class="header-actions">
         ${isAdult(currentMember) ? `<button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Categories</button>` : ""}
         <button class="btn btn-primary btn-sm" onclick="openNewThread()">+ New Thread</button>
-        ${!HUB_MEMBER ? `<button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>` : ""}
       </div>
     </div>
     ${catTabs}
@@ -1088,22 +1054,6 @@ window.saveRetention = async function() {
 };
 
 // ── Global window actions ─────────────────────────────────────────────────────
-window.selectMember = function(id) {
-  currentMember = members.find(m => m.id === id) ?? null;
-  if (pendingDeepLinkThreadId) {
-    const tid = pendingDeepLinkThreadId;
-    pendingDeepLinkThreadId = null;
-    openThread(tid);
-  } else {
-    render();
-  }
-};
-window.switchMember = function() {
-  if (HUB_MEMBER) return;
-  currentMember = null;
-  view = "list";
-  render();
-};
 window.setCategory = async function(id) {
   categoryFilter = id;
   await loadThreads();
@@ -1144,7 +1094,6 @@ window.closePicker = function() {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
-  if (!currentMember) { renderWhoScreen(); return; }
   if (view === "thread" && currentThread) { renderThreadDetail(); return; }
   renderThreadList();
 }
@@ -1159,11 +1108,7 @@ function showError(el, msg) {
 function handleDeepLink() {
   const threadId = new URLSearchParams(window.location.search).get("threadId");
   if (!threadId) return;
-  if (currentMember) {
-    openThread(threadId);
-  } else {
-    pendingDeepLinkThreadId = threadId;
-  }
+  openThread(threadId);
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
