@@ -459,18 +459,16 @@ async function loadThreads() {
 }
 
 async function loadThread(id) {
-  const { rows: tr } = await dbq(`SELECT * FROM threads WHERE id = ?`, [id]);
+  const [{ rows: tr }, { rows: rp }] = await Promise.all([
+    dbq(`SELECT * FROM threads WHERE id = ?`, [id]),
+    dbq(`SELECT * FROM replies WHERE thread_id = ? ORDER BY created_at ASC`, [id]),
+  ]);
   currentThread = tr[0] ? { ...tr[0], pinned: !!tr[0].pinned } : null;
   if (!currentThread) return;
-
-  const { rows: rp } = await dbq(
-    `SELECT * FROM replies WHERE thread_id = ? ORDER BY created_at ASC`, [id]
-  );
   currentReplies = rp;
 
   // Load all reactions for the thread and its replies in one query
-  const replyIds = rp.map(r => r.id);
-  const allIds   = [id, ...replyIds];
+  const allIds = [id, ...rp.map(r => r.id)];
   const placeholders = allIds.map(() => "?").join(",");
   const { rows: rx } = await dbq(
     `SELECT target_id, target_type, emoji, author_id FROM reactions WHERE target_id IN (${placeholders})`,
@@ -521,20 +519,41 @@ async function createReply(threadId, body) {
 async function toggleReaction(targetId, targetType, emoji) {
   if (!currentMember) return;
   const already = hasReacted(reactions, targetId, emoji, currentMember.id);
+
+  // Optimistic update
+  const prevReactions = JSON.parse(JSON.stringify(reactions));
   if (already) {
-    await dbq(
-      `DELETE FROM reactions WHERE target_id=? AND emoji=? AND author_id=?`,
-      [targetId, emoji, currentMember.id]
-    );
+    const r = reactions[targetId]?.[emoji];
+    if (r) {
+      r.count--;
+      r.authorIds = r.authorIds.filter(id => id !== currentMember.id);
+      if (r.count === 0) delete reactions[targetId][emoji];
+    }
   } else {
-    await dbq(
-      `INSERT INTO reactions (id, target_id, target_type, emoji, author_id) VALUES (?,?,?,?,?) ON CONFLICT (target_id, emoji, author_id) DO NOTHING`,
-      [uuid(), targetId, targetType, emoji, currentMember.id]
-    );
+    if (!reactions[targetId]) reactions[targetId] = {};
+    if (!reactions[targetId][emoji]) reactions[targetId][emoji] = { count: 0, authorIds: [] };
+    reactions[targetId][emoji].count++;
+    reactions[targetId][emoji].authorIds.push(currentMember.id);
   }
-  await loadThread(currentThread.id);
   pickerTarget = null;
   render();
+
+  try {
+    if (already) {
+      await dbq(
+        `DELETE FROM reactions WHERE target_id=? AND emoji=? AND author_id=?`,
+        [targetId, emoji, currentMember.id]
+      );
+    } else {
+      await dbq(
+        `INSERT INTO reactions (id, target_id, target_type, emoji, author_id) VALUES (?,?,?,?,?) ON CONFLICT (target_id, emoji, author_id) DO NOTHING`,
+        [uuid(), targetId, targetType, emoji, currentMember.id]
+      );
+    }
+  } catch (e) {
+    reactions = prevReactions;
+    render();
+  }
 }
 
 async function togglePin(threadId) {
@@ -549,8 +568,11 @@ async function togglePin(threadId) {
 
 async function deleteThread(threadId) {
   if (!await hubConfirm({ message: "Delete this thread?", description: "The thread and all its replies will be permanently removed.", confirmLabel: "Delete thread", destructive: true })) return;
-  await dbq(`DELETE FROM reactions WHERE target_id = ?`, [threadId]);
-  await dbq(`DELETE FROM reactions WHERE target_id IN (SELECT id FROM replies WHERE thread_id=?)`, [threadId]);
+  // Delete thread reactions and reply reactions in parallel (independent target_ids)
+  await Promise.all([
+    dbq(`DELETE FROM reactions WHERE target_id = ?`, [threadId]),
+    dbq(`DELETE FROM reactions WHERE target_id IN (SELECT id FROM replies WHERE thread_id=?)`, [threadId]),
+  ]);
   await dbq(`DELETE FROM replies WHERE thread_id = ?`, [threadId]);
   await dbq(`DELETE FROM threads WHERE id = ?`, [threadId]);
   backToList();
@@ -881,8 +903,7 @@ window.submitNewThread = async function() {
   try {
     const id = await createThread(title, body, catId);
     closeModal();
-    await loadThreads();
-    await openThreadById(id);
+    await Promise.all([loadThreads(), openThreadById(id)]);
   } catch (e) {
     showError(errEl, e.message ?? "Could not post thread.");
     if (btn) btn.disabled = false;
@@ -1115,8 +1136,7 @@ function handleDeepLink() {
 (async () => {
   await Promise.all([loadMembers(), setupSchema()]);
   await runAutoDelete();   // silently prune old threads before loading
-  await loadCategories();
-  await loadThreads();
+  await Promise.all([loadCategories(), loadThreads()]);
 
   if (HUB_MEMBER) {
     currentMember = members.find(m => m.id === HUB_MEMBER.id) ?? {
