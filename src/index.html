@@ -559,31 +559,76 @@ async function toggleReaction(targetId, targetType, emoji) {
 async function togglePin(threadId) {
   const t = threads.find(t => t.id === threadId) ?? currentThread;
   if (!t) return;
-  const next = t.pinned ? 0 : 1;
-  await dbq(`UPDATE app_forum__threads SET pinned=? WHERE id=?`, [next, threadId]);
-  await loadThreads();
-  if (currentThread?.id === threadId) await loadThread(threadId);
+  const next = !t.pinned;
+
+  // Optimistic update
+  const prevThreads = threads.map(th => ({ ...th }));
+  const prevCurrentThread = currentThread ? { ...currentThread } : null;
+  threads = threads.map(th => th.id === threadId ? { ...th, pinned: next } : th);
+  if (currentThread?.id === threadId) currentThread = { ...currentThread, pinned: next };
   render();
+
+  try {
+    await dbq(`UPDATE app_forum__threads SET pinned=? WHERE id=?`, [next ? 1 : 0, threadId]);
+  } catch (e) {
+    threads = prevThreads;
+    if (currentThread?.id === threadId) currentThread = prevCurrentThread;
+    render();
+  }
 }
 
 async function deleteThread(threadId) {
   if (!await hubConfirm({ message: "Delete this thread?", description: "The thread and all its replies will be permanently removed.", confirmLabel: "Delete thread", destructive: true })) return;
-  // Delete thread reactions and reply reactions in parallel (independent target_ids)
-  await Promise.all([
-    dbq(`DELETE FROM app_forum__reactions WHERE target_id = ?`, [threadId]),
-    dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (SELECT id FROM app_forum__replies WHERE thread_id=?)`, [threadId]),
-  ]);
-  await dbq(`DELETE FROM app_forum__replies WHERE thread_id = ?`, [threadId]);
-  await dbq(`DELETE FROM app_forum__threads WHERE id = ?`, [threadId]);
-  backToList();
+
+  // Optimistic: remove from local state and navigate away immediately
+  const prevThreads = threads.map(th => ({ ...th }));
+  const prevView = view;
+  const prevCurrentThread = currentThread ? { ...currentThread } : null;
+  const prevCurrentReplies = [...currentReplies];
+  threads = threads.filter(t => t.id !== threadId);
+  if (currentThread?.id === threadId) {
+    view = "list";
+    currentThread = null;
+    currentReplies = [];
+  }
+  render();
+
+  try {
+    await Promise.all([
+      dbq(`DELETE FROM app_forum__reactions WHERE target_id = ?`, [threadId]),
+      dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (SELECT id FROM app_forum__replies WHERE thread_id=?)`, [threadId]),
+    ]);
+    await dbq(`DELETE FROM app_forum__replies WHERE thread_id = ?`, [threadId]);
+    await dbq(`DELETE FROM app_forum__threads WHERE id = ?`, [threadId]);
+  } catch (e) {
+    threads = prevThreads;
+    view = prevView;
+    currentThread = prevCurrentThread;
+    currentReplies = prevCurrentReplies;
+    render();
+    alert(e.message ?? "Could not delete thread.");
+  }
 }
 
 async function deleteReply(replyId) {
   if (!await hubConfirm({ message: "Delete this reply?", confirmLabel: "Delete", destructive: true })) return;
-  await dbq(`DELETE FROM app_forum__reactions WHERE target_id=?`, [replyId]);
-  await dbq(`DELETE FROM app_forum__replies WHERE id=?`, [replyId]);
-  await loadThread(currentThread.id);
+
+  // Optimistic: remove from local state immediately
+  const prevReplies = [...currentReplies];
+  const prevCurrentThread = { ...currentThread };
+  currentReplies = currentReplies.filter(r => r.id !== replyId);
+  currentThread = { ...currentThread, reply_count: Math.max(0, Number(currentThread.reply_count) - 1) };
   render();
+
+  try {
+    await dbq(`DELETE FROM app_forum__reactions WHERE target_id=?`, [replyId]);
+    await dbq(`DELETE FROM app_forum__replies WHERE id=?`, [replyId]);
+  } catch (e) {
+    currentReplies = prevReplies;
+    currentThread = prevCurrentThread;
+    render();
+    alert(e.message ?? "Could not delete reply.");
+  }
 }
 
 // Category management
@@ -897,16 +942,60 @@ window.submitNewThread = async function() {
   if (!body)  { showError(errEl, "Please write something."); return; }
   errEl.style.display = "none";
 
-  const btn = document.querySelector(".modal .btn-primary");
-  if (btn) btn.disabled = true;
+  const id  = uuid();
+  const now = new Date().toISOString();
+
+  // Optimistic: add to local state and navigate immediately
+  const optimisticThread = {
+    id, title: title.trim(), body: body.trim(),
+    category_id: catId || null,
+    author_id: currentMember.id, author_name: currentMember.name,
+    pinned: false, created_at: now, updated_at: now,
+    reply_count: 0, reaction_count: 0,
+  };
+  threads.unshift(optimisticThread);
+  currentThread  = optimisticThread;
+  currentReplies = [];
+  reactions      = {};
+  view           = "thread";
+  _replyBodyCache = "";
+  replyPreview    = false;
+  closeModal();
+  render();
+  window.scrollTo({ top: 0, behavior: "smooth" });
 
   try {
-    const id = await createThread(title, body, catId);
-    closeModal();
-    await Promise.all([loadThreads(), openThreadById(id)]);
+    await dbq(
+      `INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,0,?,?)`,
+      [id, title.trim(), body.trim(), catId || null,
+       currentMember.id, currentMember.name, now, now]
+    );
+    if (CONTEXT) {
+      fetch(`/run/${APP_ID}/api/events`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: title.trim() } }),
+      }).catch(() => {});
+      fetch("/api/activity", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "message_posted",
+          actor: currentMember.name,
+          description: `${currentMember.name} started a new thread: "${title.trim().slice(0, 60)}"`,
+          metadata: { deepLink: { appId: APP_ID, params: { threadId: id } } },
+        }),
+      }).catch(() => {});
+    }
   } catch (e) {
-    showError(errEl, e.message ?? "Could not post thread.");
-    if (btn) btn.disabled = false;
+    // Rollback optimistic update
+    threads = threads.filter(t => t.id !== id);
+    if (currentThread?.id === id) {
+      view = "list";
+      currentThread = null;
+      currentReplies = [];
+    }
+    render();
+    alert(e.message ?? "Could not post thread.");
   }
 };
 
@@ -935,20 +1024,38 @@ window.submitReply = async function() {
   if (!body) { showError(errEl, "Please write something."); return; }
   errEl.style.display = "none";
 
-  const btn = document.querySelector(".reply-form .btn-primary");
-  if (btn) btn.disabled = true;
+  const threadId = currentThread.id;
+  const id  = uuid();
+  const now = new Date().toISOString();
+
+  // Optimistic: append reply locally and clear form immediately
+  const optimisticReply = {
+    id, thread_id: threadId, body: body.trim(),
+    author_id: currentMember.id, author_name: currentMember.name,
+    created_at: now,
+  };
+  currentReplies.push(optimisticReply);
+  currentThread = { ...currentThread, reply_count: Number(currentThread.reply_count) + 1 };
+  _replyBodyCache = "";
+  replyPreview    = false;
+  render();
+  setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }), 50);
 
   try {
-    await createReply(currentThread.id, body);
-    _replyBodyCache = "";
-    replyPreview    = false;
-    await loadThread(currentThread.id);
-    render();
-    // scroll to bottom of replies
-    setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }), 50);
+    await dbq(
+      `INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at)
+       VALUES (?,?,?,?,?,?)`,
+      [id, threadId, body.trim(), currentMember.id, currentMember.name, now]
+    );
   } catch (e) {
-    showError(errEl, e.message ?? "Could not post reply.");
-    if (btn) btn.disabled = false;
+    // Rollback optimistic update
+    currentReplies = currentReplies.filter(r => r.id !== id);
+    currentThread = { ...currentThread, reply_count: Number(currentThread.reply_count) - 1 };
+    _replyBodyCache = body;
+    render();
+    const ta = document.getElementById("reply-body");
+    if (ta) ta.value = body;
+    showError(document.getElementById("reply-error"), e.message ?? "Could not post reply.");
   }
 };
 
