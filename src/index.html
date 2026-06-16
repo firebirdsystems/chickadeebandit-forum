@@ -398,12 +398,12 @@ async function setupSchema() {
 
 // Returns the configured auto-delete threshold in days (0 = disabled).
 async function getAutoDeleteDays() {
-  const { rows } = await dbq(`SELECT value FROM forum_settings WHERE key = 'auto_delete_days'`);
+  const { rows } = await dbq(`SELECT value FROM app_forum__forum_settings WHERE key = 'auto_delete_days'`);
   return rows[0] ? parseInt(rows[0].value, 10) : 90;
 }
 
 async function saveAutoDeleteDays(days) {
-  await dbq(`INSERT INTO forum_settings (key, value) VALUES ('auto_delete_days', ?) ON CONFLICT (household_id, key) DO UPDATE SET value = EXCLUDED.value`, [String(days)]);
+  await dbq(`INSERT INTO app_forum__forum_settings (key, value) VALUES ('auto_delete_days', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [String(days)]);
 }
 
 // Delete threads (and their replies/reactions) older than the configured threshold.
@@ -412,15 +412,15 @@ async function runAutoDelete() {
   if (!days || days <= 0) return; // 0 = disabled
   const cutoff = new Date(Date.now() - days * 86400_000).toISOString();
   // Reactions on old threads
-  await dbq(`DELETE FROM reactions WHERE target_id IN (SELECT id FROM threads WHERE created_at < ?)`, [cutoff]);
+  await dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (SELECT id FROM app_forum__threads WHERE created_at < ?)`, [cutoff]);
   // Reactions on replies to old threads
-  await dbq(`DELETE FROM reactions WHERE target_id IN (
-    SELECT r.id FROM replies r JOIN threads t ON r.thread_id = t.id WHERE t.created_at < ?
+  await dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (
+    SELECT r.id FROM app_forum__replies r JOIN app_forum__threads t ON r.thread_id = t.id WHERE t.created_at < ?
   )`, [cutoff]);
   // Replies to old threads
-  await dbq(`DELETE FROM replies WHERE thread_id IN (SELECT id FROM threads WHERE created_at < ?)`, [cutoff]);
+  await dbq(`DELETE FROM app_forum__replies WHERE thread_id IN (SELECT id FROM app_forum__threads WHERE created_at < ?)`, [cutoff]);
   // The old threads themselves (never delete pinned ones — admin pinned them deliberately)
-  await dbq(`DELETE FROM threads WHERE created_at < ? AND pinned = 0`, [cutoff]);
+  await dbq(`DELETE FROM app_forum__threads WHERE created_at < ? AND pinned = 0`, [cutoff]);
 }
 
 // ── Data loading ──────────────────────────────────────────────────────────────
@@ -441,7 +441,7 @@ async function loadMembers() {
 }
 
 async function loadCategories() {
-  const { rows } = await dbq(`SELECT * FROM categories ORDER BY position, name`);
+  const { rows } = await dbq(`SELECT * FROM app_forum__categories ORDER BY position, name`);
   categories = rows;
 }
 
@@ -450,9 +450,9 @@ async function loadThreads() {
   const params = categoryFilter ? [categoryFilter] : [];
   const { rows } = await dbq(`
     SELECT t.*,
-      (SELECT COUNT(*) FROM replies WHERE thread_id = t.id)   AS reply_count,
-      (SELECT COUNT(*) FROM reactions WHERE target_id = t.id) AS reaction_count
-    FROM threads t ${catClause}
+      (SELECT COUNT(*) FROM app_forum__replies WHERE thread_id = t.id)   AS reply_count,
+      (SELECT COUNT(*) FROM app_forum__reactions WHERE target_id = t.id) AS reaction_count
+    FROM app_forum__threads t ${catClause}
     ORDER BY t.pinned DESC, t.created_at DESC
   `, params);
   threads = rows.map(r => ({ ...r, pinned: !!r.pinned }));
@@ -460,8 +460,8 @@ async function loadThreads() {
 
 async function loadThread(id) {
   const [{ rows: tr }, { rows: rp }] = await Promise.all([
-    dbq(`SELECT * FROM threads WHERE id = ?`, [id]),
-    dbq(`SELECT * FROM replies WHERE thread_id = ? ORDER BY created_at ASC`, [id]),
+    dbq(`SELECT * FROM app_forum__threads WHERE id = ?`, [id]),
+    dbq(`SELECT * FROM app_forum__replies WHERE thread_id = ? ORDER BY created_at ASC`, [id]),
   ]);
   currentThread = tr[0] ? { ...tr[0], pinned: !!tr[0].pinned } : null;
   if (!currentThread) return;
@@ -471,7 +471,7 @@ async function loadThread(id) {
   const allIds = [id, ...rp.map(r => r.id)];
   const placeholders = allIds.map(() => "?").join(",");
   const { rows: rx } = await dbq(
-    `SELECT target_id, target_type, emoji, author_id FROM reactions WHERE target_id IN (${placeholders})`,
+    `SELECT target_id, target_type, emoji, author_id FROM app_forum__reactions WHERE target_id IN (${placeholders})`,
     allIds
   );
   reactions = groupReactions(rx);
@@ -482,7 +482,7 @@ async function createThread(title, body, categoryId) {
   const id  = uuid();
   const now = new Date().toISOString();
   await dbq(
-    `INSERT INTO threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at)
+    `INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at)
      VALUES (?,?,?,?,?,?,0,?,?)`,
     [id, title.trim(), body.trim(), categoryId || null,
      currentMember.id, currentMember.name, now, now]
@@ -510,7 +510,7 @@ async function createReply(threadId, body) {
   const id  = uuid();
   const now = new Date().toISOString();
   await dbq(
-    `INSERT INTO replies (id, thread_id, body, author_id, author_name, created_at)
+    `INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at)
      VALUES (?,?,?,?,?,?)`,
     [id, threadId, body.trim(), currentMember.id, currentMember.name, now]
   );
@@ -541,12 +541,12 @@ async function toggleReaction(targetId, targetType, emoji) {
   try {
     if (already) {
       await dbq(
-        `DELETE FROM reactions WHERE target_id=? AND emoji=? AND author_id=?`,
+        `DELETE FROM app_forum__reactions WHERE target_id=? AND emoji=? AND author_id=?`,
         [targetId, emoji, currentMember.id]
       );
     } else {
       await dbq(
-        `INSERT INTO reactions (id, target_id, target_type, emoji, author_id) VALUES (?,?,?,?,?) ON CONFLICT (target_id, emoji, author_id) DO NOTHING`,
+        `INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id) VALUES (?,?,?,?,?) ON CONFLICT (target_id, emoji, author_id) DO NOTHING`,
         [uuid(), targetId, targetType, emoji, currentMember.id]
       );
     }
@@ -560,7 +560,7 @@ async function togglePin(threadId) {
   const t = threads.find(t => t.id === threadId) ?? currentThread;
   if (!t) return;
   const next = t.pinned ? 0 : 1;
-  await dbq(`UPDATE threads SET pinned=? WHERE id=?`, [next, threadId]);
+  await dbq(`UPDATE app_forum__threads SET pinned=? WHERE id=?`, [next, threadId]);
   await loadThreads();
   if (currentThread?.id === threadId) await loadThread(threadId);
   render();
@@ -570,25 +570,25 @@ async function deleteThread(threadId) {
   if (!await hubConfirm({ message: "Delete this thread?", description: "The thread and all its replies will be permanently removed.", confirmLabel: "Delete thread", destructive: true })) return;
   // Delete thread reactions and reply reactions in parallel (independent target_ids)
   await Promise.all([
-    dbq(`DELETE FROM reactions WHERE target_id = ?`, [threadId]),
-    dbq(`DELETE FROM reactions WHERE target_id IN (SELECT id FROM replies WHERE thread_id=?)`, [threadId]),
+    dbq(`DELETE FROM app_forum__reactions WHERE target_id = ?`, [threadId]),
+    dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (SELECT id FROM app_forum__replies WHERE thread_id=?)`, [threadId]),
   ]);
-  await dbq(`DELETE FROM replies WHERE thread_id = ?`, [threadId]);
-  await dbq(`DELETE FROM threads WHERE id = ?`, [threadId]);
+  await dbq(`DELETE FROM app_forum__replies WHERE thread_id = ?`, [threadId]);
+  await dbq(`DELETE FROM app_forum__threads WHERE id = ?`, [threadId]);
   backToList();
 }
 
 async function deleteReply(replyId) {
   if (!await hubConfirm({ message: "Delete this reply?", confirmLabel: "Delete", destructive: true })) return;
-  await dbq(`DELETE FROM reactions WHERE target_id=?`, [replyId]);
-  await dbq(`DELETE FROM replies WHERE id=?`, [replyId]);
+  await dbq(`DELETE FROM app_forum__reactions WHERE target_id=?`, [replyId]);
+  await dbq(`DELETE FROM app_forum__replies WHERE id=?`, [replyId]);
   await loadThread(currentThread.id);
   render();
 }
 
 // Category management
 async function saveCategory(id, name, color) {
-  await dbq(`UPDATE categories SET name=?, color=? WHERE id=?`, [name, color, id]);
+  await dbq(`UPDATE app_forum__categories SET name=?, color=? WHERE id=?`, [name, color, id]);
   await loadCategories();
   render();
 }
@@ -598,7 +598,7 @@ async function addCategory(name, color) {
   const pos = categories.length;
   const now = new Date().toISOString();
   await dbq(
-    `INSERT INTO categories (id, name, color, position, created_at) VALUES (?,?,?,?,?)`,
+    `INSERT INTO app_forum__categories (id, name, color, position, created_at) VALUES (?,?,?,?,?)`,
     [id, name, color, pos, now]
   );
   await loadCategories();
@@ -607,8 +607,8 @@ async function addCategory(name, color) {
 
 async function deleteCategory(id) {
   if (!await hubConfirm({ message: "Delete this category?", description: "Threads in it will become uncategorised.", confirmLabel: "Delete category", destructive: true })) return;
-  await dbq(`UPDATE threads SET category_id=NULL WHERE category_id=?`, [id]);
-  await dbq(`DELETE FROM categories WHERE id=?`, [id]);
+  await dbq(`UPDATE app_forum__threads SET category_id=NULL WHERE category_id=?`, [id]);
+  await dbq(`DELETE FROM app_forum__categories WHERE id=?`, [id]);
   await loadCategories();
   render();
 }

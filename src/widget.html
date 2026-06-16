@@ -143,11 +143,11 @@ async function dbq(sql, params = []) {
 async function load() {
   const [{ rows: threads }, { rows: categories }] = await Promise.all([
     dbq(`SELECT t.id, t.title, t.pinned, t.category_id, t.author_name, t.created_at,
-          (SELECT COUNT(*) FROM replies WHERE thread_id = t.id) AS reply_count
-         FROM threads t
+          (SELECT COUNT(*) FROM app_forum__replies WHERE thread_id = t.id) AS reply_count
+         FROM app_forum__threads t
          ORDER BY t.pinned DESC, t.created_at DESC
          LIMIT 6`),
-    dbq(`SELECT id, name, color FROM categories`),
+    dbq(`SELECT id, name, color FROM app_forum__categories`),
   ]);
 
   render(threads, categories);
