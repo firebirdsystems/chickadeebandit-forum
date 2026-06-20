@@ -493,7 +493,7 @@ async function createThread(title, body, categoryId) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: title.trim() } }),
     }).catch(() => {});
-    fetch("/api/activity", {
+    fetch(window.__ACTIVITY_URL ?? "/api/activity", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         type: "message_posted",
@@ -976,7 +976,7 @@ window.submitNewThread = async function() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: title.trim() } }),
       }).catch(() => {});
-      fetch("/api/activity", {
+      fetch(window.__ACTIVITY_URL ?? "/api/activity", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "message_posted",
