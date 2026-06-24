@@ -6,6 +6,27 @@
   "entrypoint": "index.html",
   "runtime": "static",
   "storage": "db",
+  "row_policies": {
+    "categories": {
+      "kind": "adult_writable"
+    },
+    "threads": {
+      "kind": "owner_or_visibility",
+      "member_column": "author_id",
+      "visibility_column": "visibility",
+      "everyone_values": ["everyone"],
+      "write_owner_only": false
+    },
+    "replies": {
+      "kind": "inherit_visibility",
+      "parent_table": "threads",
+      "fk_column": "thread_id",
+      "writer_column": "author_id"
+    },
+    "forum_settings": {
+      "kind": "adult_writable"
+    }
+  },
   "category": "general",
   "tags": [
     "forum",
