@@ -1,7 +1,7 @@
 {
   "id": "forum",
   "name": "Forum",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Threaded discussions — post topics, reply with markdown, react with emoji. Admins manage categories; adults can pin and moderate.",
   "entrypoint": "index.html",
   "runtime": "static",
@@ -15,13 +15,20 @@
       "member_column": "author_id",
       "visibility_column": "visibility",
       "everyone_values": ["everyone"],
-      "write_owner_only": false
+      "write_owner_only": true
     },
     "replies": {
       "kind": "inherit_visibility",
       "parent_table": "threads",
       "fk_column": "thread_id",
       "writer_column": "author_id"
+    },
+    "reactions": {
+      "kind": "owner_or_visibility",
+      "member_column": "author_id",
+      "visibility_column": "visibility",
+      "everyone_values": ["everyone"],
+      "write_owner_only": true
     },
     "forum_settings": {
       "kind": "adult_writable"
