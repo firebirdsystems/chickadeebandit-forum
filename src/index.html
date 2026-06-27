@@ -339,7 +339,7 @@
 </div>
 
 <script type="module">
-import { memberColor, initial, esc, isAdult, formatRelativeDate, hubConfirm } from "/hub-sdk.js";
+import { hubAlert, memberColor, initial, esc, isAdult, formatRelativeDate, hubConfirm } from "/hub-sdk.js";
 import {
   renderMarkdown, applyInline, stripMarkdown,
   groupReactions, hasReacted, reactionSummary, sortThreads,
@@ -606,7 +606,7 @@ async function deleteThread(threadId) {
     currentThread = prevCurrentThread;
     currentReplies = prevCurrentReplies;
     render();
-    alert(e.message ?? "Could not delete thread.");
+    hubAlert(e.message ?? "Could not delete thread.");
   }
 }
 
@@ -627,7 +627,7 @@ async function deleteReply(replyId) {
     currentReplies = prevReplies;
     currentThread = prevCurrentThread;
     render();
-    alert(e.message ?? "Could not delete reply.");
+    hubAlert(e.message ?? "Could not delete reply.");
   }
 }
 
@@ -995,7 +995,7 @@ window.submitNewThread = async function() {
       currentReplies = [];
     }
     render();
-    alert(e.message ?? "Could not post thread.");
+    hubAlert(e.message ?? "Could not post thread.");
   }
 };
 
