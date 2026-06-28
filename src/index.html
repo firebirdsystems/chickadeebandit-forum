@@ -667,6 +667,9 @@ function openModal(html) {
   modalEl.innerHTML = `<div class="modal">${html}</div>`;
   modalEl.addEventListener("click", e => { if (e.target === modalEl) closeModal(); });
   document.body.appendChild(modalEl);
+  // Programmatic focus works inside cross-origin iframes (unlike the autofocus
+  // attribute, which the browser blocks) because it rides the user's click gesture.
+  modalEl.querySelector("[data-autofocus]")?.focus();
 }
 function closeModal() { modalEl?.remove(); modalEl = null; previewMode = false; }
 window.closeModal = closeModal;
@@ -888,7 +891,7 @@ window.openNewThread = function() {
     <h3>New Thread</h3>
     <div class="form-group">
       <label>Title</label>
-      <input type="text" id="thread-title" placeholder="What do you want to discuss?" autofocus />
+      <input type="text" id="thread-title" placeholder="What do you want to discuss?" data-autofocus />
     </div>
     <div class="form-group">
       <label>Category</label>
