@@ -546,7 +546,7 @@ async function toggleReaction(targetId, targetType, emoji) {
       );
     } else {
       await dbq(
-        `INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id) VALUES (?,?,?,?,?) ON CONFLICT (target_id, emoji, author_id) DO NOTHING`,
+        `INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id) VALUES (?,?,?,?,?)`,
         [uuid(), targetId, targetType, emoji, currentMember.id]
       );
     }
