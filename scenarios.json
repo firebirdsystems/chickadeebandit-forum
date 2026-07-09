@@ -1,0 +1,50 @@
+{
+  "scenarios": [
+    {
+      "name": "one reaction per member per target+emoji; only the author edits their thread",
+      "members": { "author": "adult", "other": "adult" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, created_at, updated_at, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, 'everyone')",
+          "params": ["t1", "Original title", "Body", "{{author}}", "Author", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, 'thread', ?, ?, 'everyone')",
+          "params": ["rx1", "t1", "👍", "{{other}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, 'thread', ?, ?, 'everyone')",
+          "params": ["rx2", "t1", "👍", "{{other}}"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, 'thread', ?, ?, 'everyone')",
+          "params": ["rx3", "t1", "❤️", "{{other}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "UPDATE app_forum__threads SET title = 'hijacked' WHERE id = ?",
+          "params": ["t1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "author",
+          "sql": "SELECT title FROM app_forum__threads WHERE id = ?",
+          "params": ["t1"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "title": "Original title" }] }
+        }
+      ]
+    }
+  ]
+}

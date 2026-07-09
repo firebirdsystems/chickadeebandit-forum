@@ -407,20 +407,23 @@ async function saveAutoDeleteDays(days) {
 }
 
 // Delete threads (and their replies/reactions) older than the configured threshold.
+// Row policies can't rewrite subqueries on governed tables, so resolve the old
+// thread/reply ids first and delete by explicit id lists (never pinned threads
+// — admin pinned them deliberately).
 async function runAutoDelete() {
   const days = await getAutoDeleteDays();
   if (!days || days <= 0) return; // 0 = disabled
   const cutoff = new Date(Date.now() - days * 86400_000).toISOString();
-  // Reactions on old threads
-  await dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (SELECT id FROM app_forum__threads WHERE created_at < ?)`, [cutoff]);
-  // Reactions on replies to old threads
-  await dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (
-    SELECT r.id FROM app_forum__replies r JOIN app_forum__threads t ON r.thread_id = t.id WHERE t.created_at < ?
-  )`, [cutoff]);
-  // Replies to old threads
-  await dbq(`DELETE FROM app_forum__replies WHERE thread_id IN (SELECT id FROM app_forum__threads WHERE created_at < ?)`, [cutoff]);
-  // The old threads themselves (never delete pinned ones — admin pinned them deliberately)
-  await dbq(`DELETE FROM app_forum__threads WHERE created_at < ? AND pinned = 0`, [cutoff]);
+  const { rows: oldThreads } = await dbq(`SELECT id FROM app_forum__threads WHERE created_at < ? AND pinned = 0`, [cutoff]);
+  const threadIds = (oldThreads ?? []).map(r => r.id);
+  if (threadIds.length === 0) return;
+  const tPh = threadIds.map(() => "?").join(",");
+  const { rows: oldReplies } = await dbq(`SELECT id FROM app_forum__replies WHERE thread_id IN (${tPh})`, threadIds);
+  const targetIds = [...threadIds, ...(oldReplies ?? []).map(r => r.id)];
+  const targetPh = targetIds.map(() => "?").join(",");
+  await dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (${targetPh})`, targetIds);
+  await dbq(`DELETE FROM app_forum__replies WHERE thread_id IN (${tPh})`, threadIds);
+  await dbq(`DELETE FROM app_forum__threads WHERE id IN (${tPh})`, threadIds);
 }
 
 // ── Data loading ──────────────────────────────────────────────────────────────
@@ -446,16 +449,32 @@ async function loadCategories() {
 }
 
 async function loadThreads() {
-  const catClause = categoryFilter ? `WHERE t.category_id = ?` : "";
+  const catClause = categoryFilter ? `WHERE category_id = ?` : "";
   const params = categoryFilter ? [categoryFilter] : [];
+  // Row policies can't rewrite correlated subqueries on governed tables —
+  // load threads top-level and aggregate reply/reaction counts client-side.
   const { rows } = await dbq(`
-    SELECT t.*,
-      (SELECT COUNT(*) FROM app_forum__replies WHERE thread_id = t.id)   AS reply_count,
-      (SELECT COUNT(*) FROM app_forum__reactions WHERE target_id = t.id) AS reaction_count
-    FROM app_forum__threads t ${catClause}
-    ORDER BY t.pinned DESC, t.created_at DESC
+    SELECT * FROM app_forum__threads ${catClause}
+    ORDER BY pinned DESC, created_at DESC
   `, params);
-  threads = rows.map(r => ({ ...r, pinned: !!r.pinned }));
+  const ids = rows.map(r => r.id);
+  const replyCounts = new Map();
+  const reactionCounts = new Map();
+  if (ids.length > 0) {
+    const ph = ids.map(() => "?").join(",");
+    const [{ rows: rp }, { rows: rx }] = await Promise.all([
+      dbq(`SELECT thread_id FROM app_forum__replies WHERE thread_id IN (${ph})`, ids),
+      dbq(`SELECT target_id FROM app_forum__reactions WHERE target_id IN (${ph})`, ids),
+    ]);
+    for (const r of rp) replyCounts.set(r.thread_id, (replyCounts.get(r.thread_id) ?? 0) + 1);
+    for (const r of rx) reactionCounts.set(r.target_id, (reactionCounts.get(r.target_id) ?? 0) + 1);
+  }
+  threads = rows.map(r => ({
+    ...r,
+    pinned: !!r.pinned,
+    reply_count: replyCounts.get(r.id) ?? 0,
+    reaction_count: reactionCounts.get(r.id) ?? 0,
+  }));
 }
 
 async function loadThread(id) {
