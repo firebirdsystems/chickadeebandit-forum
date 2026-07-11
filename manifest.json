@@ -29,9 +29,10 @@
       "visibility_column": "visibility",
       "everyone_values": ["everyone"],
       "write_owner_only": true,
-      "unique_per_member": {
+      "max_per_member": {
         "member_column": "author_id",
-        "scope_columns": ["target_id", "emoji"]
+        "scope_columns": ["target_id", "emoji"],
+        "limit": 1
       }
     },
     "forum_settings": {
