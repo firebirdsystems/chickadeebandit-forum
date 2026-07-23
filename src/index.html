@@ -613,10 +613,16 @@ async function deleteThread(threadId) {
   render();
 
   try {
-    await Promise.all([
-      dbq(`DELETE FROM app_forum__reactions WHERE target_id = ?`, [threadId]),
-      dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (SELECT id FROM app_forum__replies WHERE thread_id=?)`, [threadId]),
-    ]);
+    // Row policies forbid referencing a governed table inside a subquery, so
+    // resolve the reply ids first, then delete their reactions by id list.
+    const { rows: replyRows } = await dbq(`SELECT id FROM app_forum__replies WHERE thread_id = ?`, [threadId]);
+    const replyIds = (replyRows ?? []).map(r => r.id);
+    const deletes = [dbq(`DELETE FROM app_forum__reactions WHERE target_id = ?`, [threadId])];
+    if (replyIds.length) {
+      const ph = replyIds.map(() => "?").join(",");
+      deletes.push(dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (${ph})`, replyIds));
+    }
+    await Promise.all(deletes);
     await dbq(`DELETE FROM app_forum__replies WHERE thread_id = ?`, [threadId]);
     await dbq(`DELETE FROM app_forum__threads WHERE id = ?`, [threadId]);
   } catch (e) {
