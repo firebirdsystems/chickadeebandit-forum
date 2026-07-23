@@ -4,7 +4,7 @@ import {
   applyInline, renderMarkdown, stripMarkdown,
   formatRelativeDate,
   groupReactions, hasReacted, reactionSummary,
-  sortThreads, isAdult,
+  sortThreads, isAdult, withReplyCounts,
 } from "../src/logic.js";
 
 // ── memberColor / initial ─────────────────────────────────────────────────────
@@ -273,5 +273,24 @@ describe("isAdult", () => {
   it("returns false for null/undefined", () => {
     expect(isAdult(null)).toBe(false);
     expect(isAdult(undefined)).toBe(false);
+  });
+});
+
+describe("withReplyCounts", () => {
+  const threads = [{ id: "t1", title: "A" }, { id: "t2", title: "B" }, { id: "t3", title: "C" }];
+  it("tallies reply rows onto matching threads, 0 for none", () => {
+    const out = withReplyCounts(threads, [
+      { thread_id: "t1" }, { thread_id: "t1" }, { thread_id: "t3" },
+    ]);
+    expect(out.map((t) => t.reply_count)).toEqual([2, 0, 1]);
+  });
+  it("does not mutate the input threads", () => {
+    const out = withReplyCounts(threads, [{ thread_id: "t1" }]);
+    expect(threads[0].reply_count).toBeUndefined();
+    expect(out[0].reply_count).toBe(1);
+  });
+  it("handles null/empty reply rows", () => {
+    expect(withReplyCounts(threads, null).every((t) => t.reply_count === 0)).toBe(true);
+    expect(withReplyCounts(threads, []).every((t) => t.reply_count === 0)).toBe(true);
   });
 });

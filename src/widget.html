@@ -124,7 +124,7 @@
 <body>
 <script type="module">
 import { esc, formatRelativeDate } from "/hub-sdk.js";
-import { stripMarkdown } from "./logic.js";
+import { stripMarkdown, withReplyCounts } from "./logic.js";
 
 const DB     = window.__DB_URL  ?? "";
 const EVENTS = window.__EVENTS_URL ?? "";
@@ -151,18 +151,16 @@ async function load() {
 
   // Row policies forbid referencing governed tables inside a subquery, so
   // reply counts come from a second flat query, tallied client-side.
-  const counts = {};
+  let replyRows = [];
   if (threads.length) {
     const ph = threads.map(() => "?").join(",");
-    const { rows: replyRows } = await dbq(
+    ({ rows: replyRows } = await dbq(
       `SELECT thread_id FROM app_forum__replies WHERE thread_id IN (${ph})`,
       threads.map(t => t.id),
-    );
-    for (const r of replyRows ?? []) counts[r.thread_id] = (counts[r.thread_id] ?? 0) + 1;
+    ));
   }
-  for (const t of threads) t.reply_count = counts[t.id] ?? 0;
 
-  render(threads, categories);
+  render(withReplyCounts(threads, replyRows), categories);
 }
 
 function navigate(params = {}) {

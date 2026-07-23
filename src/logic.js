@@ -116,3 +116,15 @@ export function sortThreads(threads) {
   });
 }
 
+/**
+ * Attach reply_count to each thread from a flat list of reply rows
+ * ({ thread_id }). Returns new thread objects. Reply counts are tallied
+ * client-side because the hub's row-policy rewriter rejects a COUNT(*)
+ * subquery over the governed replies table inside the threads query.
+ */
+export function withReplyCounts(threads, replyRows) {
+  const counts = {};
+  for (const r of replyRows ?? []) counts[r.thread_id] = (counts[r.thread_id] ?? 0) + 1;
+  return threads.map((t) => ({ ...t, reply_count: counts[t.id] ?? 0 }));
+}
+
