@@ -221,10 +221,12 @@ load().catch(() => {
     <div class="empty"><a href="/run/${APP_ID}" style="color:#111827;font-weight:600">Open Forum →</a></div>`;
 });
 
-// Poll for new threads and refresh the widget
+// Poll for new threads and refresh the widget. The type must match what this
+// app declares and publishes ("forum.post.created") — the hub 403s reads of
+// undeclared event types.
 if (EVENTS) {
   import("/hub-sdk.js").then(({ createEventPoller }) => {
-    createEventPoller(EVENTS, "forum.thread.created", () => load().catch(() => {}), 60_000);
+    createEventPoller(EVENTS, "forum.post.created", () => load().catch(() => {}), 60_000);
   });
 }
 </script>
