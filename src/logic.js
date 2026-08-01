@@ -131,3 +131,14 @@ export function withReplyCounts(threads, countRows) {
   return threads.map((t) => ({ ...t, reply_count: counts[t.id] ?? 0 }));
 }
 
+
+/**
+ * Fields the in-app search matches against (see hub-sdk `searchMatch`).
+ * The thread body and author both count — a discussion is looked for
+ * by what was said in it and by who started it, not by a title someone
+ * chose months ago. Only threads are searched: replies are not loaded
+ * until a thread is opened.
+ */
+export function searchableFields(item) {
+  return [item.title, item.body, item.author_name];
+}

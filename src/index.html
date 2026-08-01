@@ -330,6 +330,13 @@
       background: var(--red-light); color: var(--red); border-radius: 8px;
       padding: 9px 13px; font-size: 0.85rem; margin-bottom: 12px;
     }
+    .search-row { margin-bottom: 12px; }
+    .search-input {
+      width: 100%; border: 1.5px solid var(--border-mid, var(--border, #d1d5db));
+      border-radius: 8px; padding: 9px 11px; font: inherit;
+      background: var(--surface, var(--card, #fff)); color: var(--text, inherit);
+    }
+    .search-input:focus { outline: none; border-color: var(--accent, #6366f1); }
   </style>
 <base href="/run/forum/">
 </head>
@@ -339,10 +346,10 @@
 </div>
 
 <script type="module">
-import { hubAlert, memberColor, initial, esc, isAdult, formatRelativeDate, hubConfirm } from "/hub-sdk.js";
+import { hubAlert, memberColor, initial, esc, isAdult, formatRelativeDate, hubConfirm, searchMatch } from "/hub-sdk.js";
 import {
   renderMarkdown, applyInline, stripMarkdown,
-  groupReactions, hasReacted, reactionSummary, sortThreads,
+  groupReactions, hasReacted, reactionSummary, sortThreads, searchableFields,
 } from "./logic.js";
 
 // ── Runtime globals ───────────────────────────────────────────────────────────
@@ -372,6 +379,7 @@ let currentReplies = [];
 let categories     = [];
 let reactions      = {};          // grouped reaction map
 let categoryFilter = null;        // null = all
+let searchQ = "";       // in-app search (see logic.js searchableFields)
 let pickerTarget   = null;        // { targetId, targetType } for emoji picker
 let previewMode    = false;       // markdown preview toggle in new-thread modal
 let replyPreview   = false;       // preview in reply form
@@ -733,7 +741,8 @@ function mdToolbar(textareaId) {
 
 // ── Views ─────────────────────────────────────────────────────────────────────
 function renderThreadList() {
-  const sorted = sortThreads(threads);
+  const all = sortThreads(threads);
+  const sorted = searchQ ? all.filter(t => searchMatch(searchQ, searchableFields(t))) : all;
   const catBadge = cat => cat
     ? `<span class="badge" style="background:${cat.color}">${esc(cat.name)}</span>`
     : "";
@@ -751,8 +760,11 @@ function renderThreadList() {
     </div>`;
 
   const threadCards = sorted.length === 0
-    ? `<div class="empty"><div class="empty-icon">💬</div>
-       <p>${categoryFilter ? "No threads in this category yet." : "No threads yet. Start the first discussion!"}</p></div>`
+    ? (searchQ
+      ? `<div class="empty"><div class="empty-icon">🔍</div>
+       <p>No threads match "${esc(searchQ)}".</p></div>`
+      : `<div class="empty"><div class="empty-icon">💬</div>
+       <p>${categoryFilter ? "No threads in this category yet." : "No threads yet. Start the first discussion!"}</p></div>`)
     : sorted.map(t => {
         const cat     = categories.find(c => c.id === t.category_id);
         const preview = stripMarkdown(t.body).slice(0, 130);
@@ -798,8 +810,22 @@ function renderThreadList() {
       </div>
     </div>
     ${catTabs}
+    ${threads.length ? `<div class="search-row"><input id="search" class="search-input" type="search" placeholder="Search threads…" aria-label="Search threads" value="${esc(searchQ)}" /></div>` : ""}
     <div class="thread-list">${threadCards}</div>`;
+
+  // renderThreadList redraws the whole view, so put the caret back afterwards.
+  const searchEl = document.getElementById("search");
+  if (searchQ && searchEl) {
+    searchEl.focus();
+    searchEl.setSelectionRange(searchQ.length, searchQ.length);
+  }
 }
+
+document.addEventListener("input", (e) => {
+  if (e.target.id !== "search") return;
+  searchQ = e.target.value;
+  renderThreadList();
+});
 
 function renderReactionBar(targetId, targetType) {
   const summary = reactionSummary(reactions, targetId);

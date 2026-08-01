@@ -4,7 +4,7 @@ import {
   applyInline, renderMarkdown, stripMarkdown,
   formatRelativeDate,
   groupReactions, hasReacted, reactionSummary,
-  sortThreads, isAdult, withReplyCounts,
+  sortThreads, isAdult, withReplyCounts, searchableFields,
 } from "../src/logic.js";
 
 // ── memberColor / initial ─────────────────────────────────────────────────────
@@ -300,5 +300,15 @@ describe("withReplyCounts", () => {
   it("handles null/empty count rows", () => {
     expect(withReplyCounts(threads, null).every((t) => t.reply_count === 0)).toBe(true);
     expect(withReplyCounts(threads, []).every((t) => t.reply_count === 0)).toBe(true);
+  });
+});
+
+describe("searchableFields", () => {
+  it("matches on the thread body and its author, not just the title", () => {
+    const fields = searchableFields({
+      title: "Weekend plans", body: "anyone want to split a skip hire?", author_name: "Ada",
+    });
+    expect(fields).toContain("anyone want to split a skip hire?");
+    expect(fields).toContain("Ada");
   });
 });
