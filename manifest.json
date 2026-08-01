@@ -15,7 +15,22 @@
       "member_column": "author_id",
       "visibility_column": "visibility",
       "everyone_values": ["everyone"],
-      "write_owner_only": true
+      "retain_days": {
+        "default": 90,
+        "timestamp_column": "created_at",
+        "exempt_when": { "column": "pinned", "values": [1] },
+        "dependent_tables": [
+          {
+            "table": "replies",
+            "foreign_key": "thread_id",
+            "id_column": "id",
+            "dependent_tables": [
+              { "table": "reactions", "foreign_key": "target_id" }
+            ]
+          },
+          { "table": "reactions", "foreign_key": "target_id" }
+        ]
+      }
     },
     "replies": {
       "kind": "inherit_visibility",
@@ -38,6 +53,11 @@
     "forum_settings": {
       "kind": "adult_writable"
     }
+  },
+  "member_references": {
+    "threads": { "column": "author_id", "on_removed": "keep" },
+    "replies": { "column": "author_id", "on_removed": "keep" },
+    "reactions": { "column": "author_id", "on_removed": "delete" }
   },
   "category": "general",
   "tags": [

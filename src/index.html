@@ -385,7 +385,11 @@ async function dbq(sql, params = []) {
     body: JSON.stringify({ sql, params }),
   });
   const json = await res.json();
-  if (json.error) throw new Error(json.error);
+  // fetch() does not reject on 4xx/5xx, and a refused write comes back as a
+  // JSON body with an `error` key (403 row policy, 400 bad statement, 507 over
+  // quota). Without the status check a body that carries no `error` — a
+  // gateway page, a truncated response — would read as success.
+  if (!res.ok || json.error) throw new Error(json.error || `Database request failed (${res.status})`);
   return json;
 }
 
@@ -396,35 +400,13 @@ async function setupSchema() {
   // Schema managed by hub migrations (migrations/001_init.sql)
 }
 
-// Returns the configured auto-delete threshold in days (0 = disabled).
-async function getAutoDeleteDays() {
-  const { rows } = await dbq(`SELECT value FROM app_forum__forum_settings WHERE key = 'auto_delete_days'`);
-  return rows[0] ? parseInt(rows[0].value, 10) : 90;
-}
-
-async function saveAutoDeleteDays(days) {
-  await dbq(`INSERT INTO app_forum__forum_settings (key, value) VALUES ('auto_delete_days', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [String(days)]);
-}
-
-// Delete threads (and their replies/reactions) older than the configured threshold.
-// Row policies can't rewrite subqueries on governed tables, so resolve the old
-// thread/reply ids first and delete by explicit id lists (never pinned threads
-// — admin pinned them deliberately).
-async function runAutoDelete() {
-  const days = await getAutoDeleteDays();
-  if (!days || days <= 0) return; // 0 = disabled
-  const cutoff = new Date(Date.now() - days * 86400_000).toISOString();
-  const { rows: oldThreads } = await dbq(`SELECT id FROM app_forum__threads WHERE created_at < ? AND pinned = 0`, [cutoff]);
-  const threadIds = (oldThreads ?? []).map(r => r.id);
-  if (threadIds.length === 0) return;
-  const tPh = threadIds.map(() => "?").join(",");
-  const { rows: oldReplies } = await dbq(`SELECT id FROM app_forum__replies WHERE thread_id IN (${tPh})`, threadIds);
-  const targetIds = [...threadIds, ...(oldReplies ?? []).map(r => r.id)];
-  const targetPh = targetIds.map(() => "?").join(",");
-  await dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (${targetPh})`, targetIds);
-  await dbq(`DELETE FROM app_forum__replies WHERE thread_id IN (${tPh})`, threadIds);
-  await dbq(`DELETE FROM app_forum__threads WHERE id IN (${tPh})`, threadIds);
-}
+// Thread retention is declared in manifest.json (`row_policies.threads.
+// retain_days`) and executed by the hub's daily runner, which cascades to
+// replies and to the reactions on both. It replaced a client-side sweep that
+// ran an unconfirmed bulk delete on whoever opened the page, under that
+// member's own row policies, with a 100-parameter id list that stopped working
+// once a household passed ~100 old threads. Admins change the window in the
+// hub's app settings; pinned threads are exempt (exempt_when).
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 async function loadMembers() {
@@ -444,8 +426,13 @@ async function loadMembers() {
 }
 
 async function loadCategories() {
-  const { rows } = await dbq(`SELECT * FROM app_forum__categories ORDER BY position, name`);
-  categories = rows;
+  // `name` is encrypted at rest, so it can only be ordered after the hub
+  // decrypts it — sorting it in SQL would order ciphertext. `position` is in
+  // the platform plaintext skip-list and still sorts correctly server-side.
+  const { rows } = await dbq(`SELECT * FROM app_forum__categories ORDER BY position`);
+  categories = (rows ?? []).sort(
+    (a, b) => (a.position ?? 0) - (b.position ?? 0) || (a.name ?? "").localeCompare(b.name ?? "")
+  );
 }
 
 async function loadThreads() {
@@ -457,17 +444,20 @@ async function loadThreads() {
     SELECT * FROM app_forum__threads ${catClause}
     ORDER BY pinned DESC, created_at DESC
   `, params);
-  const ids = rows.map(r => r.id);
+  // Counted server-side with GROUP BY and zero parameters. The previous form
+  // built one placeholder per thread and hit the runtime's 100-parameter cap,
+  // so the whole list stopped loading once a household passed 100 threads.
+  // Grouping over the whole table (rather than the visible slice) is not a
+  // widening: the row policies still filter both tables for this caller.
   const replyCounts = new Map();
   const reactionCounts = new Map();
-  if (ids.length > 0) {
-    const ph = ids.map(() => "?").join(",");
+  if (rows.length > 0) {
     const [{ rows: rp }, { rows: rx }] = await Promise.all([
-      dbq(`SELECT thread_id FROM app_forum__replies WHERE thread_id IN (${ph})`, ids),
-      dbq(`SELECT target_id FROM app_forum__reactions WHERE target_id IN (${ph})`, ids),
+      dbq(`SELECT thread_id, COUNT(*) AS n FROM app_forum__replies GROUP BY thread_id`),
+      dbq(`SELECT target_id, COUNT(*) AS n FROM app_forum__reactions GROUP BY target_id`),
     ]);
-    for (const r of rp) replyCounts.set(r.thread_id, (replyCounts.get(r.thread_id) ?? 0) + 1);
-    for (const r of rx) reactionCounts.set(r.target_id, (reactionCounts.get(r.target_id) ?? 0) + 1);
+    for (const r of rp) replyCounts.set(r.thread_id, Number(r.n) || 0);
+    for (const r of rx) reactionCounts.set(r.target_id, Number(r.n) || 0);
   }
   threads = rows.map(r => ({
     ...r,
@@ -515,7 +505,7 @@ async function createThread(title, body, categoryId) {
     fetch(window.__ACTIVITY_URL ?? "/api/activity", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        type: "message_posted",
+        type: "conversation_message_posted",
         actor: currentMember.name,
         description: `${currentMember.name} started a new thread: "${title.trim().slice(0, 60)}"`,
         metadata: { deepLink: { appId: APP_ID, params: { threadId: id } } },
@@ -1007,7 +997,7 @@ window.submitNewThread = async function() {
       fetch(window.__ACTIVITY_URL ?? "/api/activity", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: "message_posted",
+          type: "conversation_message_posted",
           actor: currentMember.name,
           description: `${currentMember.name} started a new thread: "${title.trim().slice(0, 60)}"`,
           metadata: { deepLink: { appId: APP_ID, params: { threadId: id } } },
@@ -1111,12 +1101,6 @@ function renderSettingsModal() {
     </div>
   `).join("");
 
-  // Load current auto-delete setting to show in the modal
-  getAutoDeleteDays().then(days => {
-    const el = document.getElementById("auto-delete-days");
-    if (el) el.value = String(days === 0 ? "" : days);
-  });
-
   openModal(`
     <h3>⚙ Forum Settings</h3>
 
@@ -1140,16 +1124,12 @@ function renderSettingsModal() {
 
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
       <div style="font-size:.8rem;font-weight:700;color:var(--muted);margin-bottom:6px">THREAD RETENTION</div>
-      <p style="font-size:.82rem;color:var(--muted);margin-bottom:10px">
-        Automatically delete threads (and their replies) older than this many days.
-        Pinned threads are never deleted. Set to 0 to disable.
+      <p style="font-size:.82rem;color:var(--muted)">
+        Threads older than 90 days are removed automatically, along with their
+        replies and reactions. Pinned threads are always kept. A household admin
+        can change the window — or turn it off — under Forum in the hub's app
+        settings.
       </p>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="number" id="auto-delete-days" min="0" placeholder="days (0 = off)"
-          style="width:130px;border:1.5px solid var(--border-mid);border-radius:8px;padding:7px 10px;font-size:.88rem;font-family:inherit;outline:none" />
-        <button class="btn btn-primary btn-sm" onclick="saveRetention()">Save</button>
-      </div>
-      <p style="font-size:.75rem;color:var(--muted);margin-top:5px">Default: 90 days</p>
     </div>
 
     <div class="modal-actions" style="margin-top:14px">
@@ -1197,17 +1177,6 @@ window.doAddCategory = async function() {
 };
 
 window.doDeleteCategory = id => deleteCategory(id).then(() => renderSettingsModal());
-
-window.saveRetention = async function() {
-  const val = parseInt(document.getElementById("auto-delete-days")?.value ?? "90", 10);
-  const days = isNaN(val) || val < 0 ? 90 : val;
-  await saveAutoDeleteDays(days);
-  // Re-run cleanup immediately with new threshold
-  await runAutoDelete();
-  await loadThreads();
-  render();
-  renderSettingsModal();
-};
 
 // ── Global window actions ─────────────────────────────────────────────────────
 window.setCategory = async function(id) {
@@ -1260,6 +1229,17 @@ function showError(el, msg) {
   el.style.display = "block";
 }
 
+function renderLoadFailure(error) {
+  const message = error?.message ?? "Something went wrong.";
+  document.getElementById("root").innerHTML = `
+    <div class="empty" style="text-align:center;padding:32px 16px">
+      <div style="font-size:2rem;margin-bottom:8px">💬</div>
+      <p style="font-weight:600;margin-bottom:4px">The forum couldn't load.</p>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">${esc(message)}</p>
+      <button class="btn btn-primary btn-sm" onclick="window.location.reload()">Try again</button>
+    </div>`;
+}
+
 // ── Deep link ─────────────────────────────────────────────────────────────────
 function handleDeepLink() {
   const threadId = new URLSearchParams(window.location.search).get("threadId");
@@ -1268,18 +1248,24 @@ function handleDeepLink() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+// Wrapped in a catch: an unhandled rejection here left the page on its
+// "Loading…" placeholder forever, with the real cause visible only in a console
+// nobody opens. Any failure now renders an error state with a retry.
 (async () => {
-  await Promise.all([loadMembers(), setupSchema()]);
-  await runAutoDelete();   // silently prune old threads before loading
-  await Promise.all([loadCategories(), loadThreads()]);
+  try {
+    await Promise.all([loadMembers(), setupSchema()]);
+    await Promise.all([loadCategories(), loadThreads()]);
 
-  if (HUB_MEMBER) {
-    currentMember = members.find(m => m.id === HUB_MEMBER.id) ?? {
-      id: HUB_MEMBER.id, name: HUB_MEMBER.name, role: HUB_MEMBER.role,
-    };
+    if (HUB_MEMBER) {
+      currentMember = members.find(m => m.id === HUB_MEMBER.id) ?? {
+        id: HUB_MEMBER.id, name: HUB_MEMBER.name, role: HUB_MEMBER.role,
+      };
+    }
+    render();
+    handleDeepLink();
+  } catch (e) {
+    renderLoadFailure(e);
   }
-  render();
-  handleDeepLink();
 })();
 </script>
 </body>

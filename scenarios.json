@@ -1,8 +1,8 @@
 {
   "scenarios": [
     {
-      "name": "one reaction per member per target+emoji; only the author edits their thread",
-      "members": { "author": "adult", "other": "adult" },
+      "name": "one reaction per member per target+emoji; adults moderate threads, children cannot",
+      "members": { "author": "adult", "other": "adult", "kid": "child" },
       "steps": [
         {
           "action": "seedRaw",
@@ -32,7 +32,7 @@
         },
         {
           "action": "db",
-          "as": "other",
+          "as": "kid",
           "sql": "UPDATE app_forum__threads SET title = 'hijacked' WHERE id = ?",
           "params": ["t1"],
           "expect": { "status": 200 }
@@ -43,6 +43,20 @@
           "sql": "SELECT title FROM app_forum__threads WHERE id = ?",
           "params": ["t1"],
           "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "title": "Original title" }] }
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "UPDATE app_forum__threads SET title = 'moderated' WHERE id = ?",
+          "params": ["t1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "author",
+          "sql": "SELECT title FROM app_forum__threads WHERE id = ?",
+          "params": ["t1"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "title": "moderated" }] }
         }
       ]
     }
