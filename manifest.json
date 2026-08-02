@@ -6,6 +6,17 @@
   "entrypoint": "index.html",
   "runtime": "static",
   "storage": "db",
+  "glance": {
+    "source": {
+      "kind": "sql",
+      "query": "SELECT title AS title, created_at AS at FROM app_forum__threads ORDER BY created_at DESC LIMIT 3"
+    },
+    "display": {
+      "template": "list",
+      "title": "title",
+      "when": "at"
+    }
+  },
   "row_policies": {
     "categories": {
       "kind": "adult_writable"
