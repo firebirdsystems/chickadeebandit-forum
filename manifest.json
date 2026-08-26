@@ -6,6 +6,11 @@
   "entrypoint": "index.html",
   "runtime": "static",
   "storage": "db",
+  "preload": {
+    "categories": {"sql": "SELECT * FROM app_forum__categories ORDER BY position"},
+    "replies": {"sql": "SELECT thread_id, COUNT(*) AS n FROM app_forum__replies GROUP BY thread_id"},
+    "reactions": {"sql": "SELECT target_id, COUNT(*) AS n FROM app_forum__reactions GROUP BY target_id"}
+  },
   "glance": {
     "source": {
       "kind": "sql",
