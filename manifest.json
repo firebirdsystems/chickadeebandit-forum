@@ -22,6 +22,7 @@
       "when": "at"
     }
   },
+  "db_plaintext_columns": ["color"],
   "row_policies": {
     "categories": {
       "kind": "adult_writable"
