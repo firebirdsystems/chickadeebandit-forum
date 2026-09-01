@@ -457,6 +457,21 @@ async function loadThreads() {
   // so the whole list stopped loading once a household passed 100 threads.
   // Grouping over the whole table (rather than the visible slice) is not a
   // widening: the row policies still filter both tables for this caller.
+  //
+  // DO NOT "optimize" this into denormalized reply_count/reaction_count columns
+  // on the thread row. It was tried and reverted: replying and reacting are
+  // cross-member acts, but `threads` is owner_or_visibility, so a non-supervisor
+  // UPDATE gets `AND author_id = <caller>` appended and the bump against another
+  // member's thread silently matches no row. A child reacting to a parent's
+  // thread would leave the badge frozen while the reaction itself succeeded.
+  // The three escapes are all closed: CREATE TRIGGER is rejected by the
+  // migration validator ("trigger bodies run unscoped SQL"); column_write_acls
+  // only ever RESTRICTS a column, it cannot grant one; and write_visibility_scoped
+  // would let anyone who can read a thread rewrite its title and body, and drags
+  // delete_adult_only along with it (a child could no longer delete their own
+  // thread). Nor is the scan the counters avoided unbounded in the first place:
+  // threads carries retain_days 90 and cascades to replies and reactions, so all
+  // three tables share one window. Reverted in favour of a correct count.
   const replyCounts = new Map();
   const reactionCounts = new Map();
   if (rows.length > 0) {
