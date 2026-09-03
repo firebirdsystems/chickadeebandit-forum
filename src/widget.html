@@ -124,7 +124,7 @@
 <body>
 <script type="module">
 import { esc, formatRelativeDate } from "/hub-sdk.js";
-import { stripMarkdown, withReplyCounts } from "./logic.js";
+import { stripMarkdown } from "./logic.js";
 
 const DB     = window.__DB_URL  ?? "";
 const EVENTS = window.__EVENTS_URL ?? "";
@@ -147,24 +147,19 @@ async function dbq(sql, params = []) {
 }
 
 async function load() {
+  // reply_count is maintained by manifest.write_effects on `replies` (hub
+  // authority, same transaction as the reply), so the widget reads it off the
+  // thread row instead of paying a second, whole-table GROUP BY on every
+  // dashboard render.
   const [{ rows: threads }, { rows: categories }] = await Promise.all([
-    dbq(`SELECT t.id, t.title, t.pinned, t.category_id, t.author_name, t.created_at
+    dbq(`SELECT t.id, t.title, t.pinned, t.category_id, t.author_name, t.created_at, t.reply_count
          FROM app_forum__threads t
          ORDER BY t.pinned DESC, t.created_at DESC
          LIMIT 6`),
     dbq(`SELECT id, name, color FROM app_forum__categories`),
   ]);
 
-  // Row policies forbid referencing governed tables inside a subquery, so reply
-  // counts come from a second statement — grouped server-side, zero parameters.
-  let countRows = [];
-  if (threads.length) {
-    ({ rows: countRows } = await dbq(
-      `SELECT thread_id, COUNT(*) AS n FROM app_forum__replies GROUP BY thread_id`,
-    ));
-  }
-
-  render(withReplyCounts(threads, countRows), categories);
+  render(threads, categories);
 }
 
 function navigate(params = {}) {

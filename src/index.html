@@ -446,47 +446,31 @@ async function loadCategories() {
 async function loadThreads() {
   const catClause = categoryFilter ? `WHERE category_id = ?` : "";
   const params = categoryFilter ? [categoryFilter] : [];
-  // Row policies can't rewrite correlated subqueries on governed tables —
-  // load threads top-level and aggregate reply/reaction counts client-side.
+  // reply_count and reaction_count ride on the thread row. They are NOT written
+  // by this app: `manifest.write_effects` on `replies` and `reactions` makes the
+  // hub append a recompute to the same transaction as every insert/delete, run
+  // with hub authority, and `column_write_acls` marks both columns
+  // `writable_by: []` so no client can forge one.
+  //
+  // This is the un-revert of the counters that were tried and pulled: the bump
+  // failed because replying and reacting are cross-member acts while `threads`
+  // is owner_or_visibility, so a non-supervisor's UPDATE got
+  // `AND author_id = <caller>` appended and matched no row. An effect statement
+  // bypasses row-policy SCOPING, which is the whole mechanism — do not try to
+  // maintain these columns from client SQL again, it will silently no-op.
+  //
+  // Two hub lanes delete rows without firing effects (retention sweeps and
+  // member_references removal); the recompute style is what makes both
+  // self-healing. See migrations/006_write_effect_counters.sql.
   const { rows } = await dbq(`
     SELECT * FROM app_forum__threads ${catClause}
     ORDER BY pinned DESC, created_at DESC
   `, params);
-  // Counted server-side with GROUP BY and zero parameters. The previous form
-  // built one placeholder per thread and hit the runtime's 100-parameter cap,
-  // so the whole list stopped loading once a household passed 100 threads.
-  // Grouping over the whole table (rather than the visible slice) is not a
-  // widening: the row policies still filter both tables for this caller.
-  //
-  // DO NOT "optimize" this into denormalized reply_count/reaction_count columns
-  // on the thread row. It was tried and reverted: replying and reacting are
-  // cross-member acts, but `threads` is owner_or_visibility, so a non-supervisor
-  // UPDATE gets `AND author_id = <caller>` appended and the bump against another
-  // member's thread silently matches no row. A child reacting to a parent's
-  // thread would leave the badge frozen while the reaction itself succeeded.
-  // The three escapes are all closed: CREATE TRIGGER is rejected by the
-  // migration validator ("trigger bodies run unscoped SQL"); column_write_acls
-  // only ever RESTRICTS a column, it cannot grant one; and write_visibility_scoped
-  // would let anyone who can read a thread rewrite its title and body, and drags
-  // delete_adult_only along with it (a child could no longer delete their own
-  // thread). Nor is the scan the counters avoided unbounded in the first place:
-  // threads carries retain_days 90 and cascades to replies and reactions, so all
-  // three tables share one window. Reverted in favour of a correct count.
-  const replyCounts = new Map();
-  const reactionCounts = new Map();
-  if (rows.length > 0) {
-    const [{ rows: rp }, { rows: rx }] = await Promise.all([
-      dbq(`SELECT thread_id, COUNT(*) AS n FROM app_forum__replies GROUP BY thread_id`),
-      dbq(`SELECT target_id, COUNT(*) AS n FROM app_forum__reactions GROUP BY target_id`),
-    ]);
-    for (const r of rp) replyCounts.set(r.thread_id, Number(r.n) || 0);
-    for (const r of rx) reactionCounts.set(r.target_id, Number(r.n) || 0);
-  }
   threads = rows.map(r => ({
     ...r,
     pinned: !!r.pinned,
-    reply_count: replyCounts.get(r.id) ?? 0,
-    reaction_count: reactionCounts.get(r.id) ?? 0,
+    reply_count: Number(r.reply_count) || 0,
+    reaction_count: Number(r.reaction_count) || 0,
   }));
 }
 

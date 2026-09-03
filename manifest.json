@@ -7,9 +7,7 @@
   "runtime": "static",
   "storage": "db",
   "preload": {
-    "categories": {"sql": "SELECT * FROM app_forum__categories ORDER BY position"},
-    "replies": {"sql": "SELECT thread_id, COUNT(*) AS n FROM app_forum__replies GROUP BY thread_id"},
-    "reactions": {"sql": "SELECT target_id, COUNT(*) AS n FROM app_forum__reactions GROUP BY target_id"}
+    "categories": {"sql": "SELECT * FROM app_forum__categories ORDER BY position"}
   },
   "glance": {
     "source": {
@@ -22,7 +20,7 @@
       "when": "at"
     }
   },
-  "db_plaintext_columns": ["color"],
+  "db_plaintext_columns": ["color", "reply_count", "reaction_count"],
   "row_policies": {
     "categories": {
       "kind": "adult_writable"
@@ -32,6 +30,10 @@
       "member_column": "author_id",
       "visibility_column": "visibility",
       "everyone_values": ["everyone"],
+      "column_write_acls": {
+        "reply_count": { "writable_by": [] },
+        "reaction_count": { "writable_by": [] }
+      },
       "retain_days": {
         "default": 90,
         "timestamp_column": "created_at",
@@ -69,6 +71,38 @@
     },
     "forum_settings": {
       "kind": "adult_writable"
+    }
+  },
+  "write_effects": {
+    "replies": {
+      "insert": [
+        {
+          "label": "reply_count",
+          "statement": "UPDATE app_forum__threads SET reply_count = (SELECT COUNT(*) FROM app_forum__replies r WHERE r.thread_id = app_forum__threads.id) WHERE id = :new.thread_id"
+        }
+      ],
+      "delete": [
+        {
+          "label": "reply_count",
+          "bind": "thread_id",
+          "statement": "UPDATE app_forum__threads SET reply_count = (SELECT COUNT(*) FROM app_forum__replies r WHERE r.thread_id = app_forum__threads.id) WHERE id IN :affected"
+        }
+      ]
+    },
+    "reactions": {
+      "insert": [
+        {
+          "label": "reaction_count",
+          "statement": "UPDATE app_forum__threads SET reaction_count = (SELECT COUNT(*) FROM app_forum__reactions x WHERE x.target_id = app_forum__threads.id) WHERE id = :new.target_id"
+        }
+      ],
+      "delete": [
+        {
+          "label": "reaction_count",
+          "bind": "target_id",
+          "statement": "UPDATE app_forum__threads SET reaction_count = (SELECT COUNT(*) FROM app_forum__reactions x WHERE x.target_id = app_forum__threads.id) WHERE id IN :affected"
+        }
+      ]
     }
   },
   "member_references": {

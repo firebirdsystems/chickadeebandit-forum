@@ -116,21 +116,6 @@ export function sortThreads(threads) {
   });
 }
 
-/**
- * Attach reply_count to each thread from grouped count rows
- * ({ thread_id, n }) — the shape of `SELECT thread_id, COUNT(*) AS n ...
- * GROUP BY thread_id`. Counts are aggregated server-side because the previous
- * form fetched one row per reply through a `thread_id IN (...)` list, which
- * needs one bound parameter per thread and so hit the runtime's 100-parameter
- * cap. The rewriter still cannot put a COUNT(*) subquery over the governed
- * replies table inside the threads query, hence two statements rather than one.
- */
-export function withReplyCounts(threads, countRows) {
-  const counts = {};
-  for (const r of countRows ?? []) counts[r.thread_id] = Number(r.n) || 0;
-  return threads.map((t) => ({ ...t, reply_count: counts[t.id] ?? 0 }));
-}
-
 
 /**
  * Fields the in-app search matches against (see hub-sdk `searchMatch`).
