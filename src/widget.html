@@ -10,8 +10,8 @@
     body {
       font-family: var(--hub-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
       font-size: 13px;
-      background: #fff;
-      color: #111827;
+      background: var(--hub-surface, #fff);
+      color: var(--hub-text, #111827);
       height: 100vh;
       overflow: hidden;
       display: flex;
@@ -26,7 +26,7 @@
       border-bottom: 1px solid #e5e7eb;
       flex-shrink: 0;
     }
-    .header-count { font-size: 11px; color: #6b7280; }
+    .header-count { font-size: 11px; color: var(--hub-text-muted, #6b7280); }
 
     .thread-list {
       flex: 1;
@@ -45,7 +45,7 @@
       transition: background .1s;
     }
     .thread-row:last-child { border-bottom: none; }
-    .thread-row:hover { background: #f9fafb; }
+    .thread-row:hover { background: var(--hub-bg, #f9fafb); }
 
     .cat-dot {
       width: 7px; height: 7px;
@@ -89,12 +89,12 @@
       align-items: center;
       justify-content: space-between;
       flex-shrink: 0;
-      background: #f9fafb;
+      background: var(--hub-bg, #f9fafb);
     }
     .new-link {
       font-size: 11px;
       font-weight: 600;
-      color: #111827;
+      color: var(--hub-text, #111827);
       text-decoration: none;
       background: #111827;
       color: #fff;
@@ -104,7 +104,7 @@
     .open-link {
       font-size: 11px;
       font-weight: 600;
-      color: #111827;
+      color: var(--hub-text, #111827);
       text-decoration: none;
     }
     .open-link:hover { text-decoration: underline; }
