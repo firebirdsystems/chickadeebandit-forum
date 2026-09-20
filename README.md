@@ -1,6 +1,6 @@
 # Family Forum
 
-A [Chickadee Bandit](http://chickadeebandit.com) app.
+A [Chickadee Bandit](https://chickadeebandit.com/app-library/forum) app.
 
 Threaded discussions for the household — post topics, reply with markdown, react with emoji. Admins manage categories; adults can pin and moderate.
 
