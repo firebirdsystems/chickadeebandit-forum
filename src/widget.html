@@ -123,7 +123,7 @@
 </head>
 <body>
 <script type="module">
-import { esc, formatRelativeDate } from "/hub-sdk.js";
+import { esc, formatRelativeDate, glyph } from "/hub-sdk.js";
 import { stripMarkdown } from "./logic.js";
 
 const DB     = window.__DB_URL  ?? "";
@@ -187,7 +187,7 @@ function render(threads, categories) {
         const dot  = cat
           ? `<span class="cat-dot" style="background:${cat.color}" title="${esc(cat.name)}"></span>`
           : `<span class="cat-dot" style="background:#e5e7eb"></span>`;
-        const pin  = t.pinned ? `<span class="pin-icon">📌</span>` : "";
+        const pin  = t.pinned ? `<span class="pin-icon">${glyph("pinboard")}</span>` : "";
         const cnt  = Number(t.reply_count);
         return `
           <button class="thread-row" onclick="navigate({threadId:'${t.id}'})" style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #f3f4f6;">

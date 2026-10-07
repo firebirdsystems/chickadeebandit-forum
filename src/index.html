@@ -346,7 +346,7 @@
 </div>
 
 <script type="module">
-import { hubAlert, memberColor, initial, esc, isAdult, formatRelativeDate, hubConfirm, searchMatch } from "/hub-sdk.js";
+import { hubAlert, memberColor, initial, esc, isAdult, formatRelativeDate, hubConfirm, searchMatch, glyph, chickadee } from "/hub-sdk.js";
 import {
   renderMarkdown, applyInline, stripMarkdown,
   groupReactions, hasReacted, reactionSummary, sortThreads, searchableFields,
@@ -733,7 +733,7 @@ function mdToolbar(textareaId) {
     <button type="button" onclick="mdCodeBlock('${textareaId}')" title="Code block">{ }</button>
     <div class="sep-v"></div>
     <button type="button" onclick="mdQuote('${textareaId}')"  title="Blockquote">&gt;</button>
-    <button type="button" onclick="mdLink('${textareaId}')"   title="Link">🔗</button>
+    <button type="button" onclick="mdLink('${textareaId}')"   title="Link" aria-label="Link">${glyph("link")}</button>
     <button type="button" onclick="mdBullet('${textareaId}')" title="Bullet list">•</button>
   </div>`;
 }
@@ -760,9 +760,9 @@ function renderThreadList() {
 
   const threadCards = sorted.length === 0
     ? (searchQ
-      ? `<div class="empty"><div class="empty-icon">🔍</div>
+      ? `<div class="empty"><div class="empty-icon">${chickadee("searching", { size: 72 })}</div>
        <p>No threads match "${esc(searchQ)}".</p></div>`
-      : `<div class="empty"><div class="empty-icon">💬</div>
+      : `<div class="empty"><div class="empty-icon">${chickadee("nest", { size: 72 })}</div>
        <p>${categoryFilter ? "No threads in this category yet." : "No threads yet. Start the first discussion!"}</p></div>`)
     : sorted.map(t => {
         const cat     = categories.find(c => c.id === t.category_id);
@@ -772,7 +772,7 @@ function renderThreadList() {
           <div class="thread-card" onclick="openThread('${t.id}')">
             <div class="thread-card-inner">
               <div class="thread-title">
-                ${t.pinned ? `<span class="pin-icon">📌</span>` : ""}
+                ${t.pinned ? `<span class="pin-icon">${glyph("pinboard")}</span>` : ""}
                 ${esc(t.title)}
               </div>
               ${cat ? `<div style="margin-bottom:5px">${catBadge(cat)}</div>` : ""}
@@ -804,7 +804,7 @@ function renderThreadList() {
     <div class="page-header">
       <h1>Forum</h1>
       <div class="header-actions">
-        ${isAdult(currentMember) ? `<button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Categories</button>` : ""}
+        ${isAdult(currentMember) ? `<button class="btn btn-ghost btn-sm" onclick="openSettings()">${glyph("gear")} Categories</button>` : ""}
         <button class="btn btn-primary btn-sm" onclick="openNewThread()">+ New Thread</button>
       </div>
     </div>
@@ -843,7 +843,7 @@ function renderReactionBar(targetId, targetType) {
         ${REACTION_EMOJIS.map(e => `
           <button class="emoji-opt" onclick="doToggleReaction('${targetId}','${targetType}','${e}')">${e}</button>
         `).join("")}
-        <button class="emoji-opt" onclick="closePicker()" style="font-size:.8rem;color:var(--muted)">✕</button>
+        <button class="emoji-opt" onclick="closePicker()" style="font-size:.8rem;color:var(--muted)" aria-label="Close">${glyph("close")}</button>
       </div>`
     : `<button class="reaction-add" onclick="openPicker('${targetId}','${targetType}')">+ React</button>`;
 
@@ -880,7 +880,7 @@ function renderThreadDetail() {
 
     <div class="thread-detail-header">
       <div class="thread-detail-title">
-        ${t.pinned ? `<span style="margin-right:6px">📌</span>` : ""}${esc(t.title)}
+        ${t.pinned ? `<span style="margin-right:6px">${glyph("pinboard")}</span>` : ""}${esc(t.title)}
       </div>
       <div class="thread-detail-meta">
         ${cat ? `<span class="badge" style="background:${cat.color}">${esc(cat.name)}</span>` : ""}
@@ -893,7 +893,7 @@ function renderThreadDetail() {
       ${adult ? `
         <div class="thread-detail-actions">
           <button class="btn btn-ghost btn-sm" onclick="doPin('${t.id}')">
-            ${t.pinned ? "📌 Unpin" : "📌 Pin thread"}
+            ${glyph("pinboard")} ${t.pinned ? "Unpin" : "Pin thread"}
           </button>
           <button class="btn btn-sm" style="border:1.5px solid var(--border-mid);color:var(--red);background:transparent"
             onclick="doDeleteThread('${t.id}')">
@@ -911,7 +911,7 @@ function renderThreadDetail() {
       <h4>Leave a reply</h4>
       ${mdToolbar("reply-body")}
       <button class="preview-toggle" onclick="toggleReplyPreview()">
-        ${replyPreview ? "✏ Edit" : "👁 Preview"}
+        ${replyPreview ? `${glyph("pencil")} Edit` : `${glyph("eye")} Preview`}
       </button>
       ${replyPreview
         ? `<div class="md-body md-preview-area">${renderMarkdown(document.getElementById("reply-body")?.value ?? "")}</div>`
@@ -944,7 +944,7 @@ window.openNewThread = function() {
       <label>Body</label>
       ${mdToolbar("thread-body")}
       <button class="preview-toggle" onclick="toggleNewThreadPreview()" id="thread-preview-toggle">
-        👁 Preview
+        ${glyph("eye")} Preview
       </button>
       <div id="thread-body-wrap">
         <textarea id="thread-body" placeholder="Share your thoughts… markdown is supported" rows="6"></textarea>
@@ -967,11 +967,11 @@ window.toggleNewThreadPreview = function() {
     const body = document.getElementById("thread-body")?.value ?? "";
     wrap.dataset.body = body;
     wrap.innerHTML = `<div class="md-body md-preview-area" id="thread-preview">${renderMarkdown(body)}</div>`;
-    tog.textContent = "✏ Edit";
+    tog.innerHTML = `${glyph("pencil")} Edit`;
   } else {
     const body = wrap.dataset.body ?? "";
     wrap.innerHTML = `<textarea id="thread-body" rows="6" placeholder="Share your thoughts… markdown is supported">${esc(body)}</textarea>`;
-    tog.textContent = "👁 Preview";
+    tog.innerHTML = `${glyph("eye")} Preview`;
   }
 };
 
@@ -1119,7 +1119,7 @@ function renderSettingsModal() {
       <input class="cat-name-input" value="${esc(c.name)}" id="cat-name-${c.id}"
         onchange="onCatNameChange('${c.id}')" />
       <button class="btn btn-xs btn-ghost" onclick="toggleSwatches('${c.id}')">Color</button>
-      <button class="btn btn-xs btn-danger" style="flex-shrink:0" onclick="doDeleteCategory('${c.id}')">✕</button>
+      <button class="btn btn-xs btn-danger" style="flex-shrink:0" onclick="doDeleteCategory('${c.id}')" aria-label="Delete category">${glyph("close", { accent: "currentColor" })}</button>
     </div>
     <div id="swatches-${c.id}" style="display:none;padding:6px 0 8px 18px">
       <div class="color-swatches" data-target="${c.id}">${swatches(c.color)}</div>
@@ -1127,7 +1127,7 @@ function renderSettingsModal() {
   `).join("");
 
   openModal(`
-    <h3>⚙ Forum Settings</h3>
+    <h3>${glyph("gear")} Forum Settings</h3>
 
     <div style="font-size:.8rem;font-weight:700;color:var(--muted);margin-bottom:8px">CATEGORIES</div>
     <div id="cat-list">${catRows || "<p style='color:var(--muted);font-size:.85rem'>No categories yet.</p>"}</div>
@@ -1258,7 +1258,7 @@ function renderLoadFailure(error) {
   const message = error?.message ?? "Something went wrong.";
   document.getElementById("root").innerHTML = `
     <div class="empty" style="text-align:center;padding:32px 16px">
-      <div style="font-size:2rem;margin-bottom:8px">💬</div>
+      <div style="margin-bottom:8px">${chickadee("perched", { size: 72 })}</div>
       <p style="font-weight:600;margin-bottom:4px">The forum couldn't load.</p>
       <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">${esc(message)}</p>
       <button class="btn btn-primary btn-sm" onclick="window.location.reload()">Try again</button>
