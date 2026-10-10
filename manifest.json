@@ -40,15 +40,8 @@
         "timestamp_column": "created_at",
         "exempt_when": { "column": "pinned", "values": [1] },
         "dependent_tables": [
-          {
-            "table": "replies",
-            "foreign_key": "thread_id",
-            "id_column": "id",
-            "dependent_tables": [
-              { "table": "reactions", "foreign_key": "target_id" }
-            ]
-          },
-          { "table": "reactions", "foreign_key": "target_id" }
+          { "table": "replies", "foreign_key": "thread_id" },
+          { "table": "reactions", "foreign_key": "thread_id" }
         ]
       }
     },
@@ -101,14 +94,14 @@
       "insert": [
         {
           "label": "reaction_count",
-          "statement": "UPDATE app_forum__threads SET reaction_count = (SELECT COUNT(*) FROM app_forum__reactions x WHERE x.target_id = app_forum__threads.id) WHERE id = :new.target_id"
+          "statement": "UPDATE app_forum__threads SET reaction_count = (SELECT COUNT(*) FROM app_forum__reactions x WHERE x.thread_id = app_forum__threads.id AND x.target_id = app_forum__threads.id) WHERE id = :new.thread_id"
         }
       ],
       "delete": [
         {
           "label": "reaction_count",
-          "bind": "target_id",
-          "statement": "UPDATE app_forum__threads SET reaction_count = (SELECT COUNT(*) FROM app_forum__reactions x WHERE x.target_id = app_forum__threads.id) WHERE id IN :affected"
+          "bind": "thread_id",
+          "statement": "UPDATE app_forum__threads SET reaction_count = (SELECT COUNT(*) FROM app_forum__reactions x WHERE x.thread_id = app_forum__threads.id AND x.target_id = app_forum__threads.id) WHERE id IN :affected"
         }
       ]
     }

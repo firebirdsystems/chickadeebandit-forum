@@ -7,6 +7,14 @@
 -- through the reply, so it would be left behind. Naming the thread on every
 -- reaction makes all of them direct children.
 --
+-- The thread's reaction count is keyed by this column too (manifest
+-- `write_effects.reactions`): it counts the reactions that name the thread as
+-- both their thread and their target, and is recomputed for the thread a
+-- reaction names here. The hub admits a cascade into this table only on that
+-- footing, since the cascade and the count must agree on which thread a
+-- reaction belongs to. Counts already stored are unchanged by it: after the
+-- backfill below, a reaction on a thread names that thread in both columns.
+--
 -- The backfill reads id columns only, which are stored as written.
 ALTER TABLE app_forum__reactions ADD COLUMN thread_id TEXT;
 

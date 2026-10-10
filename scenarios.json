@@ -12,22 +12,22 @@
         {
           "action": "db",
           "as": "other",
-          "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, 'thread', ?, ?, 'everyone')",
-          "params": ["rx1", "t1", "👍", "{{other}}"],
+          "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, thread_id, emoji, author_id, visibility) VALUES (?, ?, 'thread', ?, ?, ?, 'everyone')",
+          "params": ["rx1", "t1", "t1", "👍", "{{other}}"],
           "expect": { "status": 200 }
         },
         {
           "action": "db",
           "as": "other",
-          "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, 'thread', ?, ?, 'everyone')",
-          "params": ["rx2", "t1", "👍", "{{other}}"],
+          "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, thread_id, emoji, author_id, visibility) VALUES (?, ?, 'thread', ?, ?, ?, 'everyone')",
+          "params": ["rx2", "t1", "t1", "👍", "{{other}}"],
           "expect": { "status": 403 }
         },
         {
           "action": "db",
           "as": "other",
-          "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, 'thread', ?, ?, 'everyone')",
-          "params": ["rx3", "t1", "❤️", "{{other}}"],
+          "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, thread_id, emoji, author_id, visibility) VALUES (?, ?, 'thread', ?, ?, ?, 'everyone')",
+          "params": ["rx3", "t1", "t1", "❤️", "{{other}}"],
           "expect": { "status": 200 }
         },
         {

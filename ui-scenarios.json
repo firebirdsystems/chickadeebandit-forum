@@ -1,0 +1,191 @@
+{
+  "scenarios": [
+    {
+      "name": "opening a thread, reacting and replying all work, and a half-written reply survives a reaction",
+      "members": {
+        "viewer": "adult",
+        "other": "adult"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, pinned, created_at, updated_at, visibility) VALUES (?, ?, ?, ?, ?, 0, ?, ?, 'everyone')",
+          "params": [
+            "ui-t1",
+            "Garden day",
+            "Who is in for Saturday?",
+            "{{other}}",
+            "Other",
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": [
+            "ui-r1",
+            "ui-t1",
+            "Count me in",
+            "{{other}}",
+            "Other",
+            "2026-01-01T00:00:00Z"
+          ]
+        },
+        {
+          "action": "open",
+          "as": "viewer"
+        },
+        {
+          "action": "expectText",
+          "as": "viewer",
+          "selector": ".thread-card[data-id=\"ui-t1\"]",
+          "text": "Garden day"
+        },
+        {
+          "action": "click",
+          "as": "viewer",
+          "selector": ".thread-card[data-id=\"ui-t1\"] .thread-title"
+        },
+        {
+          "action": "expectText",
+          "as": "viewer",
+          "selector": ".thread-detail-title",
+          "text": "Garden day"
+        },
+        {
+          "action": "expectCount",
+          "as": "viewer",
+          "selector": ".reply-card",
+          "count": 1
+        },
+        {
+          "action": "fill",
+          "as": "viewer",
+          "selector": "#reply-body",
+          "value": "Bringing a wheelbarrow"
+        },
+        {
+          "action": "click",
+          "as": "viewer",
+          "selector": ".thread-detail-header .reaction-add"
+        },
+        {
+          "action": "expectVisible",
+          "as": "viewer",
+          "selector": ".thread-detail-header .emoji-picker"
+        },
+        {
+          "action": "click",
+          "as": "viewer",
+          "selector": ".thread-detail-header .emoji-picker .emoji-opt[data-emoji]:first-child"
+        },
+        {
+          "action": "expectCount",
+          "as": "viewer",
+          "selector": ".thread-detail-header .reaction-btn.reacted",
+          "count": 1
+        },
+        {
+          "action": "expectText",
+          "as": "viewer",
+          "selector": "#reply-body",
+          "text": "Bringing a wheelbarrow"
+        },
+        {
+          "action": "click",
+          "as": "viewer",
+          "selector": ".reply-form .btn-primary"
+        },
+        {
+          "action": "expectCount",
+          "as": "viewer",
+          "selector": ".reply-card",
+          "count": 2
+        },
+        {
+          "action": "reload",
+          "as": "viewer"
+        },
+        {
+          "action": "expectText",
+          "as": "viewer",
+          "selector": ".thread-card[data-id=\"ui-t1\"]",
+          "text": "2 replies"
+        },
+        {
+          "action": "expectText",
+          "as": "viewer",
+          "selector": ".thread-card[data-id=\"ui-t1\"]",
+          "text": "1 reaction"
+        }
+      ]
+    },
+    {
+      "name": "pinning from the list pins without opening the thread, and a child is offered no pin",
+      "members": {
+        "parent": "adult",
+        "kid": "child"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, pinned, created_at, updated_at, visibility) VALUES (?, ?, ?, ?, ?, 0, ?, ?, 'everyone')",
+          "params": [
+            "ui-t2",
+            "House rules",
+            "Shoes off",
+            "{{kid}}",
+            "Kid",
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z"
+          ]
+        },
+        {
+          "action": "open",
+          "as": "kid"
+        },
+        {
+          "action": "expectVisible",
+          "as": "kid",
+          "selector": ".thread-card[data-id=\"ui-t2\"]"
+        },
+        {
+          "action": "expectCount",
+          "as": "kid",
+          "selector": "[data-action=\"pin\"]",
+          "count": 0
+        },
+        {
+          "action": "open",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "as": "parent",
+          "selector": ".thread-card[data-id=\"ui-t2\"] [data-action=\"pin\"]"
+        },
+        {
+          "action": "expectVisible",
+          "as": "parent",
+          "selector": ".thread-card[data-id=\"ui-t2\"] .pin-icon"
+        },
+        {
+          "action": "expectCount",
+          "as": "parent",
+          "selector": ".thread-detail-title",
+          "count": 0
+        },
+        {
+          "action": "reload",
+          "as": "parent"
+        },
+        {
+          "action": "expectVisible",
+          "as": "parent",
+          "selector": ".thread-card[data-id=\"ui-t2\"] .pin-icon"
+        }
+      ]
+    }
+  ]
+}
