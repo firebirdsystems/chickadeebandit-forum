@@ -32,7 +32,8 @@
       "everyone_values": ["everyone"],
       "column_write_acls": {
         "reply_count": { "writable_by": [] },
-        "reaction_count": { "writable_by": [] }
+        "reaction_count": { "writable_by": [] },
+        "pinned": { "writable_by": ["adult"] }
       },
       "retain_days": {
         "default": 90,
@@ -55,7 +56,8 @@
       "kind": "inherit_visibility",
       "parent_table": "threads",
       "fk_column": "thread_id",
-      "writer_column": "author_id"
+      "writer_column": "author_id",
+      "adults_bypass": true
     },
     "reactions": {
       "kind": "owner_or_visibility",
@@ -72,6 +74,12 @@
     "forum_settings": {
       "kind": "adult_writable"
     }
+  },
+  "delete_cascades": {
+    "threads": [
+      { "table": "replies", "foreign_key": "thread_id" },
+      { "table": "reactions", "foreign_key": "thread_id" }
+    ]
   },
   "write_effects": {
     "replies": {

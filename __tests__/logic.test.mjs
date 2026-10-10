@@ -4,7 +4,10 @@ import {
   applyInline, renderMarkdown, stripMarkdown,
   formatRelativeDate,
   groupReactions, hasReacted, reactionSummary,
-  sortThreads, isAdult, searchableFields,
+  sortThreads, isAdult, searchableFields, supervisesReplies, canDeleteReply,
+  supervisesThreads, canModerateThread,
+  safeColor, authorName,
+  createLatestLoader,
 } from "../src/logic.js";
 
 // ── memberColor / initial ─────────────────────────────────────────────────────
@@ -283,5 +286,225 @@ describe("searchableFields", () => {
     });
     expect(fields).toContain("anyone want to split a skip hire?");
     expect(fields).toContain("Ada");
+  });
+});
+
+// ── reply deletion ────────────────────────────────────────────────────────────
+describe("supervisesReplies", () => {
+  const adult = { id: "a1", role: "adult" };
+  const child = { id: "c1", role: "child" };
+
+  it("every adult supervises in a household, which is the default", () => {
+    expect(supervisesReplies(adult)).toBe(true);
+    expect(supervisesReplies(child)).toBe(false);
+  });
+
+  it("only the steward supervises in a shared space", () => {
+    expect(supervisesReplies(adult, { tenantKind: "shared_space", spaceKind: "general", isAdmin: false })).toBe(false);
+    expect(supervisesReplies(adult, { tenantKind: "shared_space", spaceKind: "general", isAdmin: true })).toBe(true);
+  });
+
+  it("nobody supervises in a co-parenting space, steward or not", () => {
+    expect(supervisesReplies(adult, { tenantKind: "shared_space", spaceKind: "coparenting", isAdmin: true })).toBe(false);
+  });
+});
+
+describe("canDeleteReply", () => {
+  const reply = { id: "r1", author_id: "m1" };
+  const participant = { tenantKind: "shared_space", spaceKind: "general", isAdmin: false };
+
+  it("lets the author delete their own reply anywhere", () => {
+    expect(canDeleteReply(reply, { id: "m1", role: "child" })).toBe(true);
+    expect(canDeleteReply(reply, { id: "m1", role: "adult" }, participant)).toBe(true);
+  });
+
+  it("lets a household adult delete someone else's, and not a child", () => {
+    expect(canDeleteReply(reply, { id: "m2", role: "adult" })).toBe(true);
+    expect(canDeleteReply(reply, { id: "m2", role: "child" })).toBe(false);
+  });
+
+  it("does not let a participant adult in a shared space delete someone else's", () => {
+    expect(canDeleteReply(reply, { id: "m2", role: "adult" }, participant)).toBe(false);
+  });
+
+  it("is false with nobody signed in", () => {
+    expect(canDeleteReply(reply, null)).toBe(false);
+  });
+});
+
+// ── thread pin / delete ───────────────────────────────────────────────────────
+describe("supervisesThreads", () => {
+  const adult = { id: "a1", role: "adult" };
+  const child = { id: "c1", role: "child" };
+
+  it("every adult supervises in a household, which is the default", () => {
+    expect(supervisesThreads(adult)).toBe(true);
+    expect(supervisesThreads(child)).toBe(false);
+    expect(supervisesThreads(null)).toBe(false);
+  });
+
+  it("only the steward supervises in a shared space", () => {
+    expect(supervisesThreads(adult, { tenantKind: "shared_space", spaceKind: "general", isAdmin: false })).toBe(false);
+    expect(supervisesThreads(adult, { tenantKind: "shared_space", spaceKind: "general", isAdmin: true })).toBe(true);
+  });
+
+  it("a co-parenting steward supervises threads, unlike replies", () => {
+    const coparenting = { tenantKind: "shared_space", spaceKind: "coparenting", isAdmin: true };
+    expect(supervisesThreads(adult, coparenting)).toBe(true);
+    expect(supervisesReplies(adult, coparenting)).toBe(false);
+  });
+});
+
+describe("canModerateThread", () => {
+  const thread = { id: "t1", author_id: "m1" };
+  const participant = { tenantKind: "shared_space", spaceKind: "general", isAdmin: false };
+  const steward = { tenantKind: "shared_space", spaceKind: "general", isAdmin: true };
+
+  it("lets any household adult moderate any thread", () => {
+    expect(canModerateThread(thread, { id: "m2", role: "adult" })).toBe(true);
+    expect(canModerateThread(thread, { id: "m1", role: "adult" })).toBe(true);
+  });
+
+  it("does not let a child moderate, even their own thread", () => {
+    expect(canModerateThread(thread, { id: "m2", role: "child" })).toBe(false);
+    expect(canModerateThread(thread, { id: "m1", role: "child" })).toBe(false);
+  });
+
+  it("lets a space participant moderate only the threads they started", () => {
+    expect(canModerateThread(thread, { id: "m1", role: "adult" }, participant)).toBe(true);
+    expect(canModerateThread(thread, { id: "m2", role: "adult" }, participant)).toBe(false);
+  });
+
+  it("lets a space steward moderate someone else's thread", () => {
+    expect(canModerateThread(thread, { id: "m2", role: "adult" }, steward)).toBe(true);
+  });
+
+  it("is false with nobody signed in", () => {
+    expect(canModerateThread(thread, null)).toBe(false);
+  });
+});
+
+describe("safeColor", () => {
+  it("keeps a hex colour", () => {
+    expect(safeColor("#3b82f6")).toBe("#3b82f6");
+    expect(safeColor("#fff")).toBe("#fff");
+  });
+
+  it("replaces anything that is not a hex colour", () => {
+    expect(safeColor('red"><img src=x onerror=alert(1)>')).toBe("#6b7280");
+    expect(safeColor("#3b82f6;background:url(x)")).toBe("#6b7280");
+    expect(safeColor(null)).toBe("#6b7280");
+    expect(safeColor(undefined, "#000")).toBe("#000");
+  });
+});
+
+describe("authorName", () => {
+  const members = [{ id: "m1", name: "Alex" }];
+
+  it("uses the roster name for the row's author id, whatever name the row carries", () => {
+    expect(authorName({ author_id: "m1", author_name: "Someone Else" }, members)).toBe("Alex");
+  });
+
+  it("falls back to the stored name for someone no longer on the roster", () => {
+    expect(authorName({ author_id: "gone", author_name: "Jordan" }, members)).toBe("Jordan");
+  });
+
+  it("names nobody when there is neither", () => {
+    expect(authorName({ author_id: "gone" }, [])).toBe("Former member");
+  });
+});
+
+describe("createLatestLoader", () => {
+  /** A load whose answers the test releases by hand, in any order. */
+  function harness() {
+    const pending = {};
+    const committed = [];
+    const run = createLatestLoader({
+      load: (key) => new Promise((resolve, reject) => { pending[key] = { resolve, reject }; }),
+      commit: (key, result) => committed.push([key, result]),
+    });
+    return { run, pending, committed };
+  }
+
+  it("commits the answer of a load that succeeds", async () => {
+    const { run, pending, committed } = harness();
+    const done = run("a");
+    pending.a.resolve("rows-a");
+    expect(await done).toBe(true);
+    expect(committed).toEqual([["a", "rows-a"]]);
+  });
+
+  it("commits nothing when the load fails, and throws the failure", async () => {
+    const { run, pending, committed } = harness();
+    const done = run("b");
+    pending.b.reject(new Error("offline"));
+    await expect(done).rejects.toThrow("offline");
+    expect(committed).toEqual([]);
+  });
+
+  it("drops an answer that arrives after a newer call, whatever order they land in", async () => {
+    const { run, pending, committed } = harness();
+    const first = run("a");
+    const second = run("b");
+    pending.b.resolve("rows-b");
+    expect(await second).toBe(true);
+    pending.a.resolve("rows-a");
+    expect(await first).toBe(false);
+    expect(committed).toEqual([["b", "rows-b"]]);
+  });
+
+  it("drops a superseded failure without throwing", async () => {
+    const { run, pending, committed } = harness();
+    const first = run("a");
+    const second = run("b");
+    pending.a.reject(new Error("offline"));
+    expect(await first).toBe(false);
+    pending.b.resolve("rows-b");
+    expect(await second).toBe(true);
+    expect(committed).toEqual([["b", "rows-b"]]);
+  });
+
+  it("can load the same key again after it failed", async () => {
+    const { run, pending, committed } = harness();
+    const failed = run("b");
+    pending.b.reject(new Error("offline"));
+    await expect(failed).rejects.toThrow();
+    const retry = run("b");
+    pending.b.resolve("rows-b");
+    expect(await retry).toBe(true);
+    expect(committed).toEqual([["b", "rows-b"]]);
+  });
+
+  it("cancel drops a load in flight, so going back to what is shown is the choice that wins", async () => {
+    const { run, pending, committed } = harness();
+    const done = run("b");
+    run.cancel();
+    pending.b.resolve("rows-b");
+    expect(await done).toBe(false);
+    expect(committed).toEqual([]);
+  });
+
+  it("cancel drops a failure in flight too, and a later load still commits", async () => {
+    const { run, pending, committed } = harness();
+    const dropped = run("b");
+    run.cancel();
+    pending.b.reject(new Error("offline"));
+    expect(await dropped).toBe(false);
+    const next = run("c");
+    pending.c.resolve("rows-c");
+    expect(await next).toBe(true);
+    expect(committed).toEqual([["c", "rows-c"]]);
+  });
+
+  it("passes options through and reports the latest call's number", async () => {
+    const seen = [];
+    const run = createLatestLoader({
+      load: async (key, options) => { seen.push(["load", key, options]); return 1; },
+      commit: (key, result, options) => seen.push(["commit", key, options]),
+    });
+    expect(run.generation()).toBe(0);
+    await run("a", { fresh: true });
+    expect(run.generation()).toBe(1);
+    expect(seen).toEqual([["load", "a", { fresh: true }], ["commit", "a", { fresh: true }]]);
   });
 });

@@ -346,10 +346,11 @@
 </div>
 
 <script type="module">
-import { hubAlert, memberColor, initial, esc, isAdult, formatRelativeDate, hubConfirm, searchMatch, glyph, chickadee } from "/hub-sdk.js";
+import { createDbHelper, hubAlert, memberColor, initial, esc, isAdult, formatRelativeDate, hubConfirm, searchMatch, glyph, chickadee } from "/hub-sdk.js";
 import {
   renderMarkdown, applyInline, stripMarkdown,
-  groupReactions, hasReacted, reactionSummary, sortThreads, searchableFields,
+  groupReactions, hasReacted, reactionSummary, sortThreads, searchableFields, canDeleteReply, canModerateThread,
+  safeColor, authorName, createLatestLoader,
 } from "./logic.js";
 
 // ── Runtime globals ───────────────────────────────────────────────────────────
@@ -357,6 +358,9 @@ const CONTEXT    = window.__CONTEXT_URL ?? "";
 const DB         = window.__DB_URL      ?? "";
 const APP_ID     = window.__APP_ID      ?? "forum";
 const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
+// Where the app is running, for the gates that differ between a household and
+// a shared space (see logic.js supervisesReplies, supervisesThreads).
+const TENANT = { tenantKind: window.__TENANT_KIND ?? "household", spaceKind: window.__SPACE_KIND ?? null, isAdmin: window.__IS_ADMIN === true };
 
 const REACTION_EMOJIS = ["👍","❤️","😂","😮","🙏","👏"];
 const CATEGORY_COLORS = [
@@ -385,21 +389,9 @@ let previewMode    = false;       // markdown preview toggle in new-thread modal
 let replyPreview   = false;       // preview in reply form
 
 // ── DB helper ─────────────────────────────────────────────────────────────────
-async function dbq(sql, params = []) {
-  if (!DB) return { rows: [] };
-  const res = await fetch(DB, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sql, params }),
-  });
-  const json = await res.json();
-  // fetch() does not reject on 4xx/5xx, and a refused write comes back as a
-  // JSON body with an `error` key (403 row policy, 400 bad statement, 507 over
-  // quota). Without the status check a body that carries no `error` — a
-  // gateway page, a truncated response — would read as success.
-  if (!res.ok || json.error) throw new Error(json.error || `Database request failed (${res.status})`);
-  return json;
-}
+// The SDK helper throws on a refused statement (fetch does not reject on 4xx or
+// 5xx), and its .batch() sends several statements as one atomic transaction.
+const dbq = createDbHelper(DB);
 
 function uuid() { return crypto.randomUUID(); }
 
@@ -443,45 +435,53 @@ async function loadCategories() {
   );
 }
 
-async function loadThreads() {
-  const catClause = categoryFilter ? `WHERE category_id = ?` : "";
-  const params = categoryFilter ? [categoryFilter] : [];
-  // reply_count and reaction_count ride on the thread row. They are NOT written
-  // by this app: `manifest.write_effects` on `replies` and `reactions` makes the
-  // hub append a recompute to the same transaction as every insert/delete, run
-  // with hub authority, and `column_write_acls` marks both columns
-  // `writable_by: []` so no client can forge one.
-  //
-  // This is the un-revert of the counters that were tried and pulled: the bump
-  // failed because replying and reacting are cross-member acts while `threads`
-  // is owner_or_visibility, so a non-supervisor's UPDATE got
-  // `AND author_id = <caller>` appended and matched no row. An effect statement
-  // bypasses row-policy SCOPING, which is the whole mechanism — do not try to
-  // maintain these columns from client SQL again, it will silently no-op.
-  //
-  // Two hub lanes delete rows without firing effects (retention sweeps and
-  // member_references removal); the recompute style is what makes both
-  // self-healing. See migrations/006_write_effect_counters.sql.
-  const { rows } = await dbq(`
-    SELECT * FROM app_forum__threads ${catClause}
+// Loads the thread list for the filter in force when it is called, and returns
+// whether it was kept (logic.js createLatestLoader). An answer that arrives
+// after a newer call was made is for a filter the member has left: it is
+// dropped before it can replace the list, so no later render shows one
+// category's threads under another's tab.
+//
+// reply_count and reaction_count ride on the thread row. They are NOT written
+// by this app: `manifest.write_effects` on `replies` and `reactions` makes the
+// hub append a recompute to the same transaction as every insert/delete, run
+// with hub authority, and `column_write_acls` marks both columns
+// `writable_by: []` so no client can forge one.
+//
+// This is the un-revert of the counters that were tried and pulled: the bump
+// failed because replying and reacting are cross-member acts while `threads`
+// is owner_or_visibility, so a non-supervisor's UPDATE got
+// `AND author_id = <caller>` appended and matched no row. An effect statement
+// bypasses row-policy SCOPING, which is the whole mechanism — do not try to
+// maintain these columns from client SQL again, it will silently no-op.
+//
+// Two hub lanes delete rows without firing effects (retention sweeps and
+// member_references removal); the recompute style is what makes both
+// self-healing. See migrations/006_write_effect_counters.sql.
+const loadThreadsFor = createLatestLoader({
+  load: async (filter) => (await dbq(`
+    SELECT * FROM app_forum__threads ${filter ? `WHERE category_id = ?` : ""}
     ORDER BY pinned DESC, created_at DESC
-  `, params);
-  threads = rows.map(r => ({
-    ...r,
-    pinned: !!r.pinned,
-    reply_count: Number(r.reply_count) || 0,
-    reaction_count: Number(r.reaction_count) || 0,
-  }));
-}
+  `, filter ? [filter] : [])).rows,
+  commit: (_filter, rows) => {
+    threads = rows.map(r => ({
+      ...r,
+      author_name: authorName(r, members),
+      pinned: !!r.pinned,
+      reply_count: Number(r.reply_count) || 0,
+      reaction_count: Number(r.reaction_count) || 0,
+    }));
+  },
+});
+const loadThreads = () => loadThreadsFor(categoryFilter);
 
 async function loadThread(id) {
   const [{ rows: tr }, { rows: rp }] = await Promise.all([
     dbq(`SELECT * FROM app_forum__threads WHERE id = ?`, [id]),
     dbq(`SELECT * FROM app_forum__replies WHERE thread_id = ? ORDER BY created_at ASC`, [id]),
   ]);
-  currentThread = tr[0] ? { ...tr[0], pinned: !!tr[0].pinned } : null;
+  currentThread = tr[0] ? { ...tr[0], author_name: authorName(tr[0], members), pinned: !!tr[0].pinned } : null;
   if (!currentThread) return;
-  currentReplies = rp;
+  currentReplies = rp.map(r => ({ ...r, author_name: authorName(r, members) }));
 
   // Load all reactions for the thread and its replies in one query
   const allIds = [id, ...rp.map(r => r.id)];
@@ -494,46 +494,11 @@ async function loadThread(id) {
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
-async function createThread(title, body, categoryId) {
-  const id  = uuid();
-  const now = new Date().toISOString();
-  await dbq(
-    `INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,0,?,?)`,
-    [id, title.trim(), body.trim(), categoryId || null,
-     currentMember.id, currentMember.name, now, now]
-  );
-  // Post activity to hub
-  if (CONTEXT) {
-    fetch(`/run/${APP_ID}/api/events`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: title.trim() } }),
-    }).catch(() => {});
-    fetch(window.__ACTIVITY_URL ?? "/api/activity", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "conversation_message_posted",
-        actor: currentMember.name,
-        description: `${currentMember.name} started a new thread: "${title.trim().slice(0, 60)}"`,
-        metadata: { deepLink: { appId: APP_ID, params: { threadId: id } } },
-      }),
-    }).catch(() => {});
-  }
-  return id;
-}
-
-async function createReply(threadId, body) {
-  const id  = uuid();
-  const now = new Date().toISOString();
-  await dbq(
-    `INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at)
-     VALUES (?,?,?,?,?,?)`,
-    [id, threadId, body.trim(), currentMember.id, currentMember.name, now]
-  );
-}
-
 async function toggleReaction(targetId, targetType, emoji) {
-  if (!currentMember) return;
+  if (!currentMember || !currentThread) return;
+  // Every reaction names the thread it sits under, its own or its reply's, so
+  // the hub removes them all with the thread (manifest.delete_cascades).
+  const threadId = currentThread.id;
   const already = hasReacted(reactions, targetId, emoji, currentMember.id);
 
   // Optimistic update
@@ -562,13 +527,14 @@ async function toggleReaction(targetId, targetType, emoji) {
       );
     } else {
       await dbq(
-        `INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id) VALUES (?,?,?,?,?)`,
-        [uuid(), targetId, targetType, emoji, currentMember.id]
+        `INSERT INTO app_forum__reactions (id, target_id, target_type, thread_id, emoji, author_id) VALUES (?,?,?,?,?,?)`,
+        [uuid(), targetId, targetType, threadId, emoji, currentMember.id]
       );
     }
   } catch (e) {
     reactions = prevReactions;
     render();
+    hubAlert(e.message ?? "Could not save your reaction.");
   }
 }
 
@@ -585,11 +551,14 @@ async function togglePin(threadId) {
   render();
 
   try {
-    await dbq(`UPDATE app_forum__threads SET pinned=? WHERE id=?`, [next ? 1 : 0, threadId]);
+    const { changed } = await dbq(`UPDATE app_forum__threads SET pinned=? WHERE id=?`, [next ? 1 : 0, threadId]);
+    // The hub changes nothing, without refusing, on a thread the caller may not write.
+    if (changed === 0) throw new Error(next ? "This thread could not be pinned." : "This thread could not be unpinned.");
   } catch (e) {
     threads = prevThreads;
     if (currentThread?.id === threadId) currentThread = prevCurrentThread;
     render();
+    hubAlert(e.message ?? "Could not update thread.");
   }
 }
 
@@ -610,25 +579,21 @@ async function deleteThread(threadId) {
   render();
 
   try {
-    // Row policies forbid referencing a governed table inside a subquery, so
-    // resolve the reply ids first, then delete their reactions by id list.
-    const { rows: replyRows } = await dbq(`SELECT id FROM app_forum__replies WHERE thread_id = ?`, [threadId]);
-    const replyIds = (replyRows ?? []).map(r => r.id);
-    const deletes = [dbq(`DELETE FROM app_forum__reactions WHERE target_id = ?`, [threadId])];
-    if (replyIds.length) {
-      const ph = replyIds.map(() => "?").join(",");
-      deletes.push(dbq(`DELETE FROM app_forum__reactions WHERE target_id IN (${ph})`, replyIds));
-    }
-    await Promise.all(deletes);
-    await dbq(`DELETE FROM app_forum__replies WHERE thread_id = ?`, [threadId]);
-    await dbq(`DELETE FROM app_forum__threads WHERE id = ?`, [threadId]);
-  } catch (e) {
+    // One statement: `manifest.delete_cascades` has the hub remove the replies
+    // and every reaction under the thread, whoever wrote them, in the same
+    // transaction. A cascade written here could remove only what the caller
+    // may delete, which left other members' reactions behind, and it stopped
+    // part-way when a request was lost.
+    const { changed } = await dbq(`DELETE FROM app_forum__threads WHERE id = ?`, [threadId]);
+    // The hub deletes nothing, without refusing, for a thread the caller may not remove.
+    if (changed === 0) throw new Error("not removed");
+  } catch {
     threads = prevThreads;
     view = prevView;
     currentThread = prevCurrentThread;
     currentReplies = prevCurrentReplies;
     render();
-    hubAlert(e.message ?? "Could not delete thread.");
+    hubAlert("This thread could not be deleted.");
   }
 }
 
@@ -643,8 +608,12 @@ async function deleteReply(replyId) {
   render();
 
   try {
+    // The caller's own reactions on the reply go first; other members' stay in
+    // the table unread (reactions are owner-written).
     await dbq(`DELETE FROM app_forum__reactions WHERE target_id=?`, [replyId]);
-    await dbq(`DELETE FROM app_forum__replies WHERE id=?`, [replyId]);
+    const { changed } = await dbq(`DELETE FROM app_forum__replies WHERE id=?`, [replyId]);
+    // The hub deletes nothing, without refusing, for a reply the caller may not remove.
+    if (changed === 0) throw new Error("This reply could not be deleted.");
   } catch (e) {
     currentReplies = prevReplies;
     currentThread = prevCurrentThread;
@@ -653,31 +622,44 @@ async function deleteReply(replyId) {
   }
 }
 
-// Category management
-async function saveCategory(id, name, color) {
-  await dbq(`UPDATE app_forum__categories SET name=?, color=? WHERE id=?`, [name, color, id]);
-  await loadCategories();
-  render();
+// Category management. Each returns whether the write landed, having already
+// told the member when it did not.
+async function categoryWrite(write) {
+  try {
+    await write();
+    await loadCategories();
+    render();
+    return true;
+  } catch (e) {
+    hubAlert(e.message ?? "Could not save the category.");
+    return false;
+  }
 }
 
-async function addCategory(name, color) {
-  const id  = uuid();
-  const pos = categories.length;
-  const now = new Date().toISOString();
-  await dbq(
+function saveCategory(id, name, color) {
+  const trimmed = name.trim();
+  if (!trimmed) { hubAlert("A category needs a name."); return Promise.resolve(false); }
+  return categoryWrite(() =>
+    dbq(`UPDATE app_forum__categories SET name=?, color=? WHERE id=?`, [trimmed, safeColor(color), id]));
+}
+
+function addCategory(name, color) {
+  return categoryWrite(() => dbq(
     `INSERT INTO app_forum__categories (id, name, color, position, created_at) VALUES (?,?,?,?,?)`,
-    [id, name, color, pos, now]
-  );
-  await loadCategories();
-  render();
+    [uuid(), name, safeColor(color), categories.length, new Date().toISOString()]
+  ));
 }
 
 async function deleteCategory(id) {
-  if (!await hubConfirm({ message: "Delete this category?", description: "Threads in it will become uncategorised.", confirmLabel: "Delete category", destructive: true })) return;
-  await dbq(`UPDATE app_forum__threads SET category_id=NULL WHERE category_id=?`, [id]);
-  await dbq(`DELETE FROM app_forum__categories WHERE id=?`, [id]);
-  await loadCategories();
-  render();
+  if (!await hubConfirm({ message: "Delete this category?", description: "Threads in it will become uncategorised.", confirmLabel: "Delete category", destructive: true })) return false;
+  return categoryWrite(async () => {
+    await dbq(`UPDATE app_forum__threads SET category_id=NULL WHERE category_id=?`, [id]);
+    await dbq(`DELETE FROM app_forum__categories WHERE id=?`, [id]);
+    if (categoryFilter === id) {
+      categoryFilter = null;
+      await loadThreads();
+    }
+  });
 }
 
 // ── Modal helpers ─────────────────────────────────────────────────────────────
@@ -705,6 +687,7 @@ function wrapSelection(textareaId, before, after = before) {
   ta.value    = ta.value.slice(0, start) + before + sel + after + ta.value.slice(end);
   ta.focus();
   ta.setSelectionRange(start + before.length, start + before.length + sel.length);
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
 }
 function insertAtCursor(textareaId, text) {
   const ta = document.getElementById(textareaId);
@@ -713,6 +696,7 @@ function insertAtCursor(textareaId, text) {
   ta.value   = ta.value.slice(0, pos) + text + ta.value.slice(pos);
   ta.focus();
   ta.setSelectionRange(pos + text.length, pos + text.length);
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
 }
 window.mdBold      = id => wrapSelection(id, "**");
 window.mdItalic    = id => wrapSelection(id, "*");
@@ -743,18 +727,18 @@ function renderThreadList() {
   const all = sortThreads(threads);
   const sorted = searchQ ? all.filter(t => searchMatch(searchQ, searchableFields(t))) : all;
   const catBadge = cat => cat
-    ? `<span class="badge" style="background:${cat.color}">${esc(cat.name)}</span>`
+    ? `<span class="badge" style="background:${safeColor(cat.color)}">${esc(cat.name)}</span>`
     : "";
 
   const catTabs = `
     <div class="category-tabs">
       <button class="cat-tab ${!categoryFilter ? "active" : ""}"
         style="${!categoryFilter ? "background:var(--accent)" : ""}"
-        onclick="setCategory(null)">All</button>
+        data-action="set-category" data-id="">All</button>
       ${categories.map(c => `
         <button class="cat-tab ${categoryFilter === c.id ? "active" : ""}"
-          style="${categoryFilter === c.id ? `background:${c.color}` : ""}"
-          onclick="setCategory('${c.id}')">${esc(c.name)}</button>
+          style="${categoryFilter === c.id ? `background:${safeColor(c.color)}` : ""}"
+          data-action="set-category" data-id="${esc(c.id)}">${esc(c.name)}</button>
       `).join("")}
     </div>`;
 
@@ -767,9 +751,9 @@ function renderThreadList() {
     : sorted.map(t => {
         const cat     = categories.find(c => c.id === t.category_id);
         const preview = stripMarkdown(t.body).slice(0, 130);
-        const adult   = isAdult(currentMember);
+        const moderates = canModerateThread(t, currentMember, TENANT);
         return `
-          <div class="thread-card" onclick="openThread('${t.id}')">
+          <div class="thread-card" data-action="open-thread" data-id="${esc(t.id)}">
             <div class="thread-card-inner">
               <div class="thread-title">
                 ${t.pinned ? `<span class="pin-icon">${glyph("pinboard")}</span>` : ""}
@@ -783,15 +767,15 @@ function renderThreadList() {
                 <span>${formatRelativeDate(t.created_at)}</span>
                 <span class="sep">·</span>
                 <span>${t.reply_count} ${t.reply_count === 1 ? "reply" : "replies"}</span>
-                ${t.reaction_count > 0 ? `<span class="sep">·</span><span>${t.reaction_count} reactions</span>` : ""}
-                ${adult ? `
+                ${t.reaction_count > 0 ? `<span class="sep">·</span><span>${t.reaction_count} ${t.reaction_count === 1 ? "reaction" : "reactions"}</span>` : ""}
+                ${moderates ? `
                   <span class="sep">·</span>
                   <button class="btn btn-xs btn-ghost" style="padding:1px 7px"
-                    onclick="event.stopPropagation();doPin('${t.id}')">
+                    data-action="pin" data-id="${esc(t.id)}">
                     ${t.pinned ? "Unpin" : "Pin"}
                   </button>
                   <button class="btn btn-xs" style="padding:1px 7px;border:1.5px solid var(--border-mid);color:var(--red);background:transparent"
-                    onclick="event.stopPropagation();doDeleteThread('${t.id}')">
+                    data-action="delete-thread" data-id="${esc(t.id)}">
                     Delete
                   </button>
                 ` : ""}
@@ -826,14 +810,18 @@ document.addEventListener("input", (e) => {
   renderThreadList();
 });
 
+// Row ids and the emoji come from rows any member can write, so they are never
+// put inside an inline handler: they ride on escaped data-* attributes and one
+// delegated listener reads them (see the ACTIONS table below).
 function renderReactionBar(targetId, targetType) {
   const summary = reactionSummary(reactions, targetId);
   const myId    = currentMember?.id ?? "";
+  const target  = `data-target="${esc(targetId)}" data-target-type="${esc(targetType)}"`;
   const counts  = summary.map(({ emoji, count }) => {
     const reacted = hasReacted(reactions, targetId, emoji, myId);
     return `<button class="reaction-btn ${reacted ? "reacted" : ""}"
-      onclick="doToggleReaction('${targetId}','${targetType}','${emoji}')">
-      ${emoji} <span>${count}</span>
+      data-action="react" ${target} data-emoji="${esc(emoji)}">
+      ${esc(emoji)} <span>${count}</span>
     </button>`;
   }).join("");
 
@@ -841,11 +829,11 @@ function renderReactionBar(targetId, targetType) {
   const picker = showPicker
     ? `<div class="emoji-picker" style="display:inline-flex">
         ${REACTION_EMOJIS.map(e => `
-          <button class="emoji-opt" onclick="doToggleReaction('${targetId}','${targetType}','${e}')">${e}</button>
+          <button class="emoji-opt" data-action="react" ${target} data-emoji="${esc(e)}">${e}</button>
         `).join("")}
         <button class="emoji-opt" onclick="closePicker()" style="font-size:.8rem;color:var(--muted)" aria-label="Close">${glyph("close")}</button>
       </div>`
-    : `<button class="reaction-add" onclick="openPicker('${targetId}','${targetType}')">+ React</button>`;
+    : `<button class="reaction-add" data-action="open-picker" ${target}>+ React</button>`;
 
   return `<div class="reactions">${counts}${picker}</div>`;
 }
@@ -854,7 +842,7 @@ function renderThreadDetail() {
   if (!currentThread) return;
   const t   = currentThread;
   const cat = categories.find(c => c.id === t.category_id);
-  const adult = isAdult(currentMember);
+  const moderates = canModerateThread(t, currentMember, TENANT);
 
   const repliesHtml = currentReplies.length === 0
     ? `<div class="empty" style="padding:24px 0">
@@ -863,11 +851,11 @@ function renderThreadDetail() {
     : currentReplies.map(r => `
         <div class="reply-card">
           <div class="reply-header">
-            <div class="avatar" style="background:${memberColor(r.author_id)}">${initial(r.author_name)}</div>
+            <div class="avatar" style="background:${memberColor(String(r.author_id ?? ""))}">${esc(initial(r.author_name))}</div>
             <span class="reply-author">${esc(r.author_name)}</span>
             <span class="reply-date">${formatRelativeDate(r.created_at)}</span>
-            ${adult || r.author_id === currentMember?.id
-              ? `<button class="reply-delete" onclick="doDeleteReply('${r.id}')">Delete</button>`
+            ${canDeleteReply(r, currentMember, TENANT)
+              ? `<button class="reply-delete" data-action="delete-reply" data-id="${esc(r.id)}">Delete</button>`
               : ""}
           </div>
           <div class="md-body">${renderMarkdown(r.body)}</div>
@@ -883,20 +871,20 @@ function renderThreadDetail() {
         ${t.pinned ? `<span style="margin-right:6px">${glyph("pinboard")}</span>` : ""}${esc(t.title)}
       </div>
       <div class="thread-detail-meta">
-        ${cat ? `<span class="badge" style="background:${cat.color}">${esc(cat.name)}</span>` : ""}
+        ${cat ? `<span class="badge" style="background:${safeColor(cat.color)}">${esc(cat.name)}</span>` : ""}
         <span>${esc(t.author_name)}</span>
         <span>·</span>
         <span>${formatRelativeDate(t.created_at)}</span>
       </div>
       <div class="md-body">${renderMarkdown(t.body)}</div>
       ${renderReactionBar(t.id, "thread")}
-      ${adult ? `
+      ${moderates ? `
         <div class="thread-detail-actions">
-          <button class="btn btn-ghost btn-sm" onclick="doPin('${t.id}')">
+          <button class="btn btn-ghost btn-sm" data-action="pin" data-id="${esc(t.id)}">
             ${glyph("pinboard")} ${t.pinned ? "Unpin" : "Pin thread"}
           </button>
           <button class="btn btn-sm" style="border:1.5px solid var(--border-mid);color:var(--red);background:transparent"
-            onclick="doDeleteThread('${t.id}')">
+            data-action="delete-thread" data-id="${esc(t.id)}">
             Delete thread
           </button>
         </div>` : ""}
@@ -914,9 +902,9 @@ function renderThreadDetail() {
         ${replyPreview ? `${glyph("pencil")} Edit` : `${glyph("eye")} Preview`}
       </button>
       ${replyPreview
-        ? `<div class="md-body md-preview-area">${renderMarkdown(document.getElementById("reply-body")?.value ?? "")}</div>`
+        ? `<div class="md-body md-preview-area">${renderMarkdown(_replyBodyCache)}</div>`
         : `<textarea id="reply-body" placeholder="Write your reply… markdown is supported"
-             oninput="syncReplyPreview(this)"></textarea>`}
+             oninput="syncReplyPreview(this)">${esc(_replyBodyCache)}</textarea>`}
       <div id="reply-error" class="error-msg" style="display:none;margin-top:8px"></div>
       <div style="margin-top:10px;display:flex;gap:8px">
         <button class="btn btn-primary btn-sm" onclick="submitReply()">Post Reply</button>
@@ -937,7 +925,7 @@ window.openNewThread = function() {
       <label>Category</label>
       <select id="thread-cat">
         <option value="">— No category —</option>
-        ${categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}
+        ${categories.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}
       </select>
     </div>
     <div class="form-group">
@@ -977,7 +965,10 @@ window.toggleNewThreadPreview = function() {
 
 window.submitNewThread = async function() {
   const title = document.getElementById("thread-title")?.value?.trim();
-  const body  = document.getElementById("thread-body")?.value?.trim();
+  // While previewing, the textarea is not in the page: the text is held on the wrapper.
+  const body  = (previewMode
+    ? document.getElementById("thread-body-wrap")?.dataset.body
+    : document.getElementById("thread-body")?.value)?.trim();
   const catId = document.getElementById("thread-cat")?.value;
   const errEl = document.getElementById("thread-error");
 
@@ -1009,8 +1000,9 @@ window.submitNewThread = async function() {
 
   try {
     await dbq(
-      `INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,0,?,?)`,
+      // `pinned` is left to its default: only adults may write that column.
+      `INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
       [id, title.trim(), body.trim(), catId || null,
        currentMember.id, currentMember.name, now, now]
     );
@@ -1048,21 +1040,13 @@ let _replyBodyCache = "";
 window.syncReplyPreview = function(ta) { _replyBodyCache = ta.value; };
 
 window.toggleReplyPreview = function() {
-  if (!replyPreview) {
-    // capture current value before switching to preview
-    const ta = document.getElementById("reply-body");
-    if (ta) _replyBodyCache = ta.value;
-  }
   replyPreview = !replyPreview;
   renderThreadDetail();
-  if (!replyPreview) {
-    const ta = document.getElementById("reply-body");
-    if (ta) { ta.value = _replyBodyCache; ta.focus(); }
-  }
+  if (!replyPreview) document.getElementById("reply-body")?.focus();
 };
 
 window.submitReply = async function() {
-  const body  = (document.getElementById("reply-body")?.value ?? _replyBodyCache).trim();
+  const body  = _replyBodyCache.trim();
   const errEl = document.getElementById("reply-error");
   if (!body) { showError(errEl, "Please write something."); return; }
   errEl.style.display = "none";
@@ -1096,8 +1080,6 @@ window.submitReply = async function() {
     currentThread = { ...currentThread, reply_count: Number(currentThread.reply_count) - 1 };
     _replyBodyCache = body;
     render();
-    const ta = document.getElementById("reply-body");
-    if (ta) ta.value = body;
     showError(document.getElementById("reply-error"), e.message ?? "Could not post reply.");
   }
 };
@@ -1110,19 +1092,22 @@ window.openSettings = function() {
 function renderSettingsModal() {
   const swatches = color => CATEGORY_COLORS.map(c =>
     `<button class="swatch ${c === color ? "selected" : ""}" style="background:${c}"
-       onclick="pickSwatch(this,'${c}')" data-color="${c}"></button>`
+       data-action="pick-swatch" data-color="${c}"></button>`
   ).join("");
 
+  // One block per category, found again from the clicked control by its
+  // data-cat-id: a category id is never part of an element id or a handler.
   const catRows = categories.map(c => `
-    <div class="cat-row" data-cat-id="${c.id}">
-      <div class="cat-dot" style="background:${c.color}"></div>
-      <input class="cat-name-input" value="${esc(c.name)}" id="cat-name-${c.id}"
-        onchange="onCatNameChange('${c.id}')" />
-      <button class="btn btn-xs btn-ghost" onclick="toggleSwatches('${c.id}')">Color</button>
-      <button class="btn btn-xs btn-danger" style="flex-shrink:0" onclick="doDeleteCategory('${c.id}')" aria-label="Delete category">${glyph("close", { accent: "currentColor" })}</button>
-    </div>
-    <div id="swatches-${c.id}" style="display:none;padding:6px 0 8px 18px">
-      <div class="color-swatches" data-target="${c.id}">${swatches(c.color)}</div>
+    <div class="cat-block" data-cat-id="${esc(c.id)}">
+      <div class="cat-row">
+        <div class="cat-dot" style="background:${safeColor(c.color)}"></div>
+        <input class="cat-name-input" value="${esc(c.name)}" aria-label="Category name" />
+        <button class="btn btn-xs btn-ghost" data-action="toggle-swatches">Color</button>
+        <button class="btn btn-xs btn-danger" style="flex-shrink:0" data-action="delete-category" aria-label="Delete category">${glyph("close", { accent: "currentColor" })}</button>
+      </div>
+      <div class="cat-swatches" style="display:none;padding:6px 0 8px 18px">
+        <div class="color-swatches">${swatches(safeColor(c.color))}</div>
+      </div>
     </div>
   `).join("");
 
@@ -1142,7 +1127,7 @@ function renderSettingsModal() {
       <div class="color-swatches" id="new-cat-swatches" style="margin-top:8px">
         ${CATEGORY_COLORS.map((c, i) =>
           `<button class="swatch ${i === 0 ? "selected" : ""}" style="background:${c}"
-             onclick="pickNewSwatch(this,'${c}')" data-color="${c}"></button>`
+             data-action="pick-swatch" data-color="${c}"></button>`
         ).join("")}
       </div>
     </div>
@@ -1150,10 +1135,10 @@ function renderSettingsModal() {
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
       <div style="font-size:.8rem;font-weight:700;color:var(--muted);margin-bottom:6px">THREAD RETENTION</div>
       <p style="font-size:.82rem;color:var(--muted)">
-        Threads older than 90 days are removed automatically, along with their
-        replies and reactions. Pinned threads are always kept. A household admin
-        can change the window — or turn it off — under Forum in the hub's app
-        settings.
+        Old threads are removed automatically, along with their replies and
+        reactions: after 90 days unless that has been changed. Pinned threads
+        are always kept. A household admin can change the window — or turn it
+        off — under Forum in the hub's app settings.
       </p>
     </div>
 
@@ -1163,57 +1148,68 @@ function renderSettingsModal() {
   `);
 }
 
-window.toggleSwatches = function(catId) {
-  const el = document.getElementById(`swatches-${catId}`);
-  if (el) el.style.display = el.style.display === "none" ? "block" : "none";
-};
+function categoryBlock(el) {
+  const block = el.closest(".cat-block");
+  if (!block) return null;
+  return {
+    id: block.dataset.catId,
+    name: block.querySelector(".cat-name-input")?.value ?? "",
+    color: block.querySelector(".swatch.selected")?.dataset.color
+      ?? categories.find(c => c.id === block.dataset.catId)?.color,
+    swatches: block.querySelector(".cat-swatches"),
+    dot: block.querySelector(".cat-dot"),
+  };
+}
 
-window.pickSwatch = function(btn, color) {
-  const wrap = btn.closest(".color-swatches");
-  wrap.querySelectorAll(".swatch").forEach(s => s.classList.remove("selected"));
+function toggleSwatches(el) {
+  const sw = categoryBlock(el)?.swatches;
+  if (sw) sw.style.display = sw.style.display === "none" ? "block" : "none";
+}
+
+function pickSwatch(btn) {
+  btn.closest(".color-swatches").querySelectorAll(".swatch").forEach(s => s.classList.remove("selected"));
   btn.classList.add("selected");
-  const catId = wrap.dataset.target;
-  if (catId) {
-    const dot = document.querySelector(`[data-cat-id="${catId}"] .cat-dot`);
-    if (dot) dot.style.background = color;
-    saveCategory(catId, document.getElementById(`cat-name-${catId}`)?.value ?? "", color);
-  }
-};
+  const cat = categoryBlock(btn);
+  if (!cat) return;                       // the "add category" swatches: nothing to save yet
+  cat.dot.style.background = safeColor(cat.color);
+  saveCategory(cat.id, cat.name, cat.color);
+}
 
-window.pickNewSwatch = function(btn, _color) {
-  document.querySelectorAll("#new-cat-swatches .swatch").forEach(s => s.classList.remove("selected"));
-  btn.classList.add("selected");
-};
-
-window.onCatNameChange = function(catId) {
-  const name  = document.getElementById(`cat-name-${catId}`)?.value ?? "";
-  const color = document.querySelector(`[data-target="${catId}"] .swatch.selected`)?.dataset.color
-             ?? categories.find(c => c.id === catId)?.color
-             ?? "#6b7280";
-  saveCategory(catId, name, color);
-};
+document.addEventListener("change", (e) => {
+  if (!e.target.classList?.contains("cat-name-input")) return;
+  const cat = categoryBlock(e.target);
+  if (cat) saveCategory(cat.id, cat.name, cat.color);
+});
 
 window.doAddCategory = async function() {
   const name  = document.getElementById("new-cat-name")?.value?.trim();
   const color = document.querySelector("#new-cat-swatches .swatch.selected")?.dataset.color ?? "#6b7280";
   if (!name) return;
-  await addCategory(name, color);
-  renderSettingsModal();
+  if (await addCategory(name, color)) renderSettingsModal();
 };
-
-window.doDeleteCategory = id => deleteCategory(id).then(() => renderSettingsModal());
 
 // ── Global window actions ─────────────────────────────────────────────────────
-window.setCategory = async function(id) {
+async function setCategory(id) {
   categoryFilter = id;
-  await loadThreads();
-  render();
-};
+  try {
+    if (await loadThreads()) render();
+  } catch (e) {
+    if (categoryFilter === id) hubAlert(e.message ?? "Could not load threads.");
+  }
+}
 
 window.openThread = async function(id) { await openThreadById(id); };
 async function openThreadById(id) {
-  await loadThread(id);
-  if (!currentThread) return;
+  try {
+    await loadThread(id);
+  } catch (e) {
+    hubAlert(e.message ?? "Could not open this thread.");
+    return;
+  }
+  if (!currentThread) {
+    hubAlert("This thread is no longer available.");
+    return;
+  }
   view = "thread";
   _replyBodyCache = "";
   replyPreview    = false;
@@ -1228,15 +1224,26 @@ window.backToList = async function() {
   render();
 };
 
-window.doPin           = id => togglePin(id);
-window.doDeleteThread  = id => deleteThread(id);
-window.doDeleteReply   = id => deleteReply(id);
-window.doToggleReaction = (tid, ttype, emoji) => toggleReaction(tid, ttype, emoji);
-
-window.openPicker = function(targetId, targetType) {
-  pickerTarget = { targetId, targetType };
-  render();
+// Every control that names a row carries data-action plus the row's values as
+// data-* attributes. The nearest marked ancestor wins, so a Pin button inside a
+// thread card pins without also opening the thread.
+const ACTIONS = {
+  "open-thread":     el => openThreadById(el.dataset.id),
+  "pin":             el => togglePin(el.dataset.id),
+  "delete-thread":   el => deleteThread(el.dataset.id),
+  "delete-reply":    el => deleteReply(el.dataset.id),
+  "set-category":    el => setCategory(el.dataset.id || null),
+  "react":           el => toggleReaction(el.dataset.target, el.dataset.targetType, el.dataset.emoji),
+  "open-picker":     el => { pickerTarget = { targetId: el.dataset.target, targetType: el.dataset.targetType }; render(); },
+  "toggle-swatches": el => toggleSwatches(el),
+  "pick-swatch":     el => pickSwatch(el),
+  "delete-category": async el => { if (await deleteCategory(categoryBlock(el)?.id)) renderSettingsModal(); },
 };
+document.addEventListener("click", (e) => {
+  const el = e.target.closest?.("[data-action]");
+  if (el) ACTIONS[el.dataset.action]?.(el);
+});
+
 window.closePicker = function() {
   pickerTarget = null;
   render();

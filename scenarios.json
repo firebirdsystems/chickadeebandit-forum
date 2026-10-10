@@ -87,16 +87,17 @@
           "sql": "UPDATE app_forum__threads SET title = ? WHERE id = ?",
           "params": ["hijacked", "t-b"]
         },
-        { "action": "db", "as": "a", "sql": "DELETE FROM app_forum__threads WHERE id = ?", "params": ["t-b2"] },
+        {
+          "action": "db",
+          "as": "a",
+          "sql": "DELETE FROM app_forum__threads WHERE id = ?",
+          "params": ["t-b2"]
+        },
         {
           "action": "db",
           "as": "b",
           "sql": "SELECT id, title FROM app_forum__threads ORDER BY id",
-          "expect": {
-            "status": 200,
-            "rowCount": 2,
-            "rowsContain": [{ "id": "t-b", "title": "B's thread" }, { "id": "t-b2" }]
-          }
+          "expect": { "status": 200, "rowCount": 2, "rowsContain": [{ "id": "t-b", "title": "B's thread" }, { "id": "t-b2" }] }
         },
         {
           "action": "db",
@@ -117,6 +118,209 @@
           "as": "b",
           "sql": "SELECT id, title FROM app_forum__threads",
           "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "t-b", "title": "moderated" }] }
+        }
+      ]
+    },
+    {
+      "name": "an adult can delete a reply someone else wrote; a child can delete only their own",
+      "members": { "author": "adult", "other": "adult", "kid": "child" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, created_at, updated_at, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, 'everyone')",
+          "params": ["t1", "Thread", "Body", "{{author}}", "Author", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["r-kid", "t1", "Kid's reply", "{{kid}}", "Kid", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["r-other", "t1", "Other's reply", "{{other}}", "Other", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "DELETE FROM app_forum__replies WHERE id = ? RETURNING id",
+          "params": ["r-other"],
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "author",
+          "sql": "DELETE FROM app_forum__replies WHERE id = ? RETURNING id",
+          "params": ["r-other"],
+          "expect": { "status": 200, "rowCount": 1 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "DELETE FROM app_forum__replies WHERE id = ? RETURNING id",
+          "params": ["r-kid"],
+          "expect": { "status": 200, "rowCount": 1 }
+        }
+      ]
+    },
+    {
+      "name": "in a shared space only the steward can delete another member's reply; a participant adult cannot",
+      "context": "shared_space",
+      "members": { "a": "adult", "b": "adult", "steward": "admin" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, created_at, updated_at, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, 'everyone')",
+          "params": ["t-b", "B's thread", "Body", "{{b}}", "B", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["r-b", "t-b", "B's reply", "{{b}}", "B", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "db",
+          "as": "a",
+          "sql": "DELETE FROM app_forum__replies WHERE id = ? RETURNING id",
+          "params": ["r-b"],
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "DELETE FROM app_forum__replies WHERE id = ? RETURNING id",
+          "params": ["r-b"],
+          "expect": { "status": 200, "rowCount": 1 }
+        }
+      ]
+    },
+    {
+      "name": "in a co-parenting space a steward can still edit the other parent's thread but cannot delete their reply",
+      "context": "shared_space.coparenting",
+      "members": { "mom": "admin", "dad": "admin" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, created_at, updated_at, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, 'everyone')",
+          "params": ["t-dad", "Dad's thread", "Body", "{{dad}}", "Dad", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["r-dad", "t-dad", "Dad's reply", "{{dad}}", "Dad", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "db",
+          "as": "mom",
+          "sql": "DELETE FROM app_forum__replies WHERE id = ? RETURNING id",
+          "params": ["r-dad"],
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "mom",
+          "sql": "UPDATE app_forum__threads SET title = ? WHERE id = ? RETURNING id",
+          "params": ["Retitled", "t-dad"],
+          "expect": { "status": 200, "rowCount": 1 }
+        },
+        {
+          "action": "db",
+          "as": "dad",
+          "sql": "DELETE FROM app_forum__replies WHERE id = ? RETURNING id",
+          "params": ["r-dad"],
+          "expect": { "status": 200, "rowCount": 1 }
+        }
+      ]
+    },
+    {
+      "name": "only adults pin: a child cannot pin a thread, their own included",
+      "members": { "parent": "adult", "kid": "child" },
+      "steps": [
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "params": ["k1", "Kid thread", "Body", "{{kid}}", "Kid", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+          "params": ["k2", "Pinned by kid", "Body", "{{kid}}", "Kid", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_forum__threads SET pinned = 1 WHERE id = ?",
+          "params": ["k1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "UPDATE app_forum__threads SET pinned = 1 WHERE id = ?",
+          "params": ["k1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT pinned FROM app_forum__threads WHERE id = ?",
+          "params": ["k1"],
+          "expect": { "status": 200, "rowsContain": [{ "pinned": 1 }] }
+        }
+      ]
+    },
+    {
+      "name": "deleting a thread removes its replies and every reaction under it, other members' included",
+      "members": { "author": "adult", "other": "adult" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, created_at, updated_at, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, 'everyone')",
+          "params": ["tc", "Thread", "Body", "{{author}}", "Author", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": ["rc", "tc", "Reply", "{{other}}", "Other", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, thread_id, emoji, author_id, visibility) VALUES (?, ?, 'thread', ?, ?, ?, 'everyone')",
+          "params": ["xc1", "tc", "tc", "+", "{{other}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, thread_id, emoji, author_id, visibility) VALUES (?, ?, 'reply', ?, ?, ?, 'everyone')",
+          "params": ["xc2", "rc", "tc", "+", "{{other}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "author",
+          "sql": "DELETE FROM app_forum__threads WHERE id = ?",
+          "params": ["tc"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "SELECT id FROM app_forum__reactions WHERE thread_id = ?",
+          "params": ["tc"],
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "other",
+          "sql": "SELECT id FROM app_forum__replies WHERE id = ?",
+          "params": ["rc"],
+          "expect": { "status": 200, "rowCount": 0 }
         }
       ]
     }

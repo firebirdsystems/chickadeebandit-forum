@@ -127,3 +127,94 @@ export function sortThreads(threads) {
 export function searchableFields(item) {
   return [item.title, item.body, item.author_name];
 }
+
+/**
+ * Whether a member may delete a reply someone else wrote. Mirrors the hub's
+ * rule for the replies table (inherit_visibility with adults_bypass): every
+ * adult in a household, the steward in a shared space, and nobody in a
+ * co-parenting space, where one parent never overrules the other.
+ */
+export function supervisesReplies(member, { tenantKind = "household", spaceKind = null, isAdmin = false } = {}) {
+  if (tenantKind === "household") return isAdult(member);
+  return spaceKind !== "coparenting" && isAdmin === true;
+}
+
+/** A reply's own author may always delete it; so may whoever supervises replies. */
+export function canDeleteReply(reply, member, tenant) {
+  return !!member && (reply.author_id === member.id || supervisesReplies(member, tenant));
+}
+
+/**
+ * Whether a member may pin or delete a thread someone else started. Mirrors the
+ * hub's rule for the threads table (owner_or_visibility): every adult in a
+ * household, and only the steward in a shared space, co-parenting included.
+ * From anyone else such a write changes nothing.
+ */
+export function supervisesThreads(member, { tenantKind = "household", spaceKind = null, isAdmin = false } = {}) {
+  return tenantKind === "household" ? isAdult(member) : isAdmin === true;
+}
+
+/**
+ * Pinning and deleting threads is offered to adults: over any thread where they
+ * supervise, and over the threads they started themselves where they do not.
+ */
+export function canModerateThread(thread, member, tenant) {
+  return isAdult(member) && (thread.author_id === member.id || supervisesThreads(member, tenant));
+}
+
+/**
+ * A category colour as it may be written into a style attribute: a hex colour,
+ * or the fallback. The column is plain text any adult can write, so anything
+ * else is not drawn.
+ */
+export function safeColor(color, fallback = "#6b7280") {
+  return typeof color === "string" && /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : fallback;
+}
+
+/**
+ * The name to show for whoever wrote a thread or reply. `author_id` is set by
+ * the hub and cannot be forged; `author_name` is whatever the writer sent, so
+ * it is used only for someone no longer on the roster.
+ */
+export function authorName(row, members = []) {
+  const member = members.find(m => m.id === row.author_id);
+  return member?.name ?? row.author_name ?? "Former member";
+}
+
+/**
+ * Wraps a load so that only the latest call's answer is ever kept.
+ *
+ * `load(key, options)` fetches; `commit(key, result, options)` puts the answer
+ * into the page. Each call takes the next number, and a call's answer is
+ * committed only if no newer call has been made since. An answer that arrives
+ * late is dropped before it can change anything, and nothing is committed for a
+ * load that failed: the page stays exactly as it was.
+ *
+ * Resolves true when the answer was committed, false when a newer call
+ * superseded it (a superseded failure is dropped too). A failure of the latest
+ * call is thrown to the caller.
+ *
+ * `generation()` is the number of the latest call, for work that must notice a
+ * newer load without starting one. `cancel()` supersedes whatever is in flight
+ * without loading anything: for when the member's latest choice is what is
+ * already on the page, so an earlier, slower choice must not land over it.
+ */
+export function createLatestLoader({ load, commit }) {
+  let seq = 0;
+  async function run(key, options) {
+    const mine = ++seq;
+    let result;
+    try {
+      result = await load(key, options);
+    } catch (e) {
+      if (mine === seq) throw e;
+      return false;
+    }
+    if (mine !== seq) return false;
+    commit(key, result, options);
+    return true;
+  }
+  run.generation = () => seq;
+  run.cancel = () => { seq++; };
+  return run;
+}
