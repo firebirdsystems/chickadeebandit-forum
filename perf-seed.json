@@ -1,0 +1,559 @@
+{
+  "seed": [
+    {
+      "sql": "INSERT INTO app_forum__categories (id, name, color, position, created_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days'))",
+      "params": [
+        "announcements",
+        "Announcements",
+        "#3b82f6",
+        0
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__categories (id, name, color, position, created_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days'))",
+      "params": [
+        "planning",
+        "Planning",
+        "#10b981",
+        1
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__categories (id, name, color, position, created_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days'))",
+      "params": [
+        "random",
+        "Random",
+        "#6b7280",
+        2
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__categories (id, name, color, position, created_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days'))",
+      "params": [
+        "questions",
+        "Questions",
+        "#f59e0b",
+        3
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__categories (id, name, color, position, created_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-40 days'))",
+      "params": [
+        "pf-house",
+        "House projects",
+        "#8b5cf6",
+        4
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at, visibility, reply_count, reaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days'), ?, ?, ?)",
+      "params": [
+        "pf-t0",
+        "House rules for screen time, fall edition",
+        "Weeknights: homework first, then one hour. Weekends are flexible but devices charge in the kitchen overnight. Reply here if something is not working.",
+        "announcements",
+        "{{me}}",
+        "Adam",
+        1,
+        "everyone",
+        3,
+        2
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at, visibility, reply_count, reaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-12 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-12 days'), ?, ?, ?)",
+      "params": [
+        "pf-t1",
+        "Thanksgiving plans: who is hosting?",
+        "We need to decide by the end of the month. Options are our place, Grandma's, or meeting at the cabin. Thoughts?",
+        "planning",
+        "{{me}}",
+        "Adam",
+        1,
+        "everyone",
+        4,
+        1
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at, visibility, reply_count, reaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days'), ?, ?, ?)",
+      "params": [
+        "pf-t2",
+        "Garage cleanout this Saturday",
+        "Starting at 9am. Goal is to get both cars back inside before the first frost. Bring gloves.",
+        "pf-house",
+        "{{me}}",
+        "Adam",
+        0,
+        "everyone",
+        2,
+        1
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at, visibility, reply_count, reaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 days'), ?, ?, ?)",
+      "params": [
+        "pf-t3",
+        "Anyone seen the blue cooler?",
+        "Need it for the soccer tournament. Last seen after the lake trip.",
+        "questions",
+        "{{me}}",
+        "Adam",
+        0,
+        "everyone",
+        2,
+        1
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at, visibility, reply_count, reaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 days'), ?, ?, ?)",
+      "params": [
+        "pf-t4",
+        "Movie night picks for October",
+        "Drop your nominations here. One spooky, one not spooky. We vote Friday at dinner.",
+        "random",
+        "{{me}}",
+        "Adam",
+        0,
+        "everyone",
+        4,
+        2
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at, visibility, reply_count, reaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-9 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-9 days'), ?, ?, ?)",
+      "params": [
+        "pf-t5",
+        "New wifi password",
+        "The router was replaced on Tuesday. The new password is on the sticky note inside the pantry door. Please do not post it here.",
+        "announcements",
+        "{{me}}",
+        "Adam",
+        0,
+        "everyone",
+        1,
+        1
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at, visibility, reply_count, reaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-16 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-16 days'), ?, ?, ?)",
+      "params": [
+        "pf-t6",
+        "Summer trip ideas for next year",
+        "Starting a list early so we can watch flight prices. Budget is about the same as this year.",
+        "planning",
+        "{{me}}",
+        "Adam",
+        0,
+        "everyone",
+        3,
+        0
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at, visibility, reply_count, reaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-20 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-20 days'), ?, ?, ?)",
+      "params": [
+        "pf-t7",
+        "How do I reset the thermostat schedule?",
+        "It keeps switching to 62 at 9pm and I cannot find where that is set.",
+        "questions",
+        "{{me}}",
+        "Adam",
+        0,
+        "everyone",
+        2,
+        1
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at, visibility, reply_count, reaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-5 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-5 days'), ?, ?, ?)",
+      "params": [
+        "pf-t8",
+        "Leaf raking rotation",
+        "Front yard on Saturdays, back yard on Sundays. Sign up below for a weekend.",
+        "pf-house",
+        "{{me}}",
+        "Adam",
+        0,
+        "everyone",
+        2,
+        0
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, pinned, created_at, updated_at, visibility, reply_count, reaction_count) VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-24 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-24 days'), ?, ?, ?)",
+      "params": [
+        "pf-t9",
+        "Best pancakes we have ever made",
+        "Writing this down before we forget: buttermilk, a little vanilla, and let the batter rest ten minutes.",
+        "random",
+        "{{me}}",
+        "Adam",
+        0,
+        "everyone",
+        2,
+        1
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days','+3 hours'))",
+      "params": [
+        "pf-t0-r0",
+        "pf-t0",
+        "Works for me. Can we add that phones stay off the dinner table?",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days','+6 hours'))",
+      "params": [
+        "pf-t0-r1",
+        "pf-t0",
+        "Added. Dinner table is a phone-free zone.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days','+9 hours'))",
+      "params": [
+        "pf-t0-r2",
+        "pf-t0",
+        "Reminder that the kitchen charger moved to the counter by the fridge.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-12 days','+3 hours'))",
+      "params": [
+        "pf-t1-r0",
+        "pf-t1",
+        "Cabin would be fun but the oven there is tiny.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-12 days','+6 hours'))",
+      "params": [
+        "pf-t1-r1",
+        "pf-t1",
+        "Grandma offered, and she already has the big table.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-12 days','+9 hours'))",
+      "params": [
+        "pf-t1-r2",
+        "pf-t1",
+        "Let's do Grandma's. I will bring the pies and the rolls.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-12 days','+12 hours'))",
+      "params": [
+        "pf-t1-r3",
+        "pf-t1",
+        "Booked. Arriving Wednesday night.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days','+3 hours'))",
+      "params": [
+        "pf-t2-r0",
+        "pf-t2",
+        "I will pick up contractor bags and a few bins on Friday.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days','+6 hours'))",
+      "params": [
+        "pf-t2-r1",
+        "pf-t2",
+        "Donation pile goes by the door, the truck comes Monday.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 days','+3 hours'))",
+      "params": [
+        "pf-t3-r0",
+        "pf-t3",
+        "Check the basement shelf behind the camping stuff.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 days','+6 hours'))",
+      "params": [
+        "pf-t3-r1",
+        "pf-t3",
+        "Found it. It was in the trunk the whole time.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 days','+3 hours'))",
+      "params": [
+        "pf-t4-r0",
+        "pf-t4",
+        "Spooky: Coraline. Not spooky: Paddington 2.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 days','+6 hours'))",
+      "params": [
+        "pf-t4-r1",
+        "pf-t4",
+        "Seconding Paddington 2.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 days','+9 hours'))",
+      "params": [
+        "pf-t4-r2",
+        "pf-t4",
+        "Adding Hocus Pocus to the spooky list.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 days','+12 hours'))",
+      "params": [
+        "pf-t4-r3",
+        "pf-t4",
+        "Vote is in. Coraline this week, Paddington next.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-9 days','+3 hours'))",
+      "params": [
+        "pf-t5-r0",
+        "pf-t5",
+        "Printer is back online too.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-16 days','+3 hours'))",
+      "params": [
+        "pf-t6-r0",
+        "pf-t6",
+        "Glacier National Park has been on my list forever.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-16 days','+6 hours'))",
+      "params": [
+        "pf-t6-r1",
+        "pf-t6",
+        "A week at the coast with a rental house would be easy with the dog.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-16 days','+9 hours'))",
+      "params": [
+        "pf-t6-r2",
+        "pf-t6",
+        "Pricing both. Will post numbers next week.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-20 days','+3 hours'))",
+      "params": [
+        "pf-t7-r0",
+        "pf-t7",
+        "Hold the Schedule button for three seconds, then pick the weekday block.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-20 days','+6 hours'))",
+      "params": [
+        "pf-t7-r1",
+        "pf-t7",
+        "That did it, thank you.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-5 days','+3 hours'))",
+      "params": [
+        "pf-t8-r0",
+        "pf-t8",
+        "I will take this coming weekend.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-5 days','+6 hours'))",
+      "params": [
+        "pf-t8-r1",
+        "pf-t8",
+        "Compost bags are in the shed, left side.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-24 days','+3 hours'))",
+      "params": [
+        "pf-t9-r0",
+        "pf-t9",
+        "Resting the batter is the secret. Never skipping it again.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-24 days','+6 hours'))",
+      "params": [
+        "pf-t9-r1",
+        "pf-t9",
+        "Made them again Sunday, still the best.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, ?, ?, ?, ?)",
+      "params": [
+        "pf-t0-x0",
+        "pf-t0",
+        "thread",
+        "👍",
+        "{{me}}",
+        "everyone"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, ?, ?, ?, ?)",
+      "params": [
+        "pf-t0-x1",
+        "pf-t0",
+        "thread",
+        "❤️",
+        "{{me}}",
+        "everyone"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, ?, ?, ?, ?)",
+      "params": [
+        "pf-t1-x0",
+        "pf-t1",
+        "thread",
+        "👍",
+        "{{me}}",
+        "everyone"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, ?, ?, ?, ?)",
+      "params": [
+        "pf-t2-x0",
+        "pf-t2",
+        "thread",
+        "👏",
+        "{{me}}",
+        "everyone"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, ?, ?, ?, ?)",
+      "params": [
+        "pf-t3-x0",
+        "pf-t3",
+        "thread",
+        "😂",
+        "{{me}}",
+        "everyone"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, ?, ?, ?, ?)",
+      "params": [
+        "pf-t4-x0",
+        "pf-t4",
+        "thread",
+        "❤️",
+        "{{me}}",
+        "everyone"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, ?, ?, ?, ?)",
+      "params": [
+        "pf-t4-x1",
+        "pf-t4",
+        "thread",
+        "😂",
+        "{{me}}",
+        "everyone"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, ?, ?, ?, ?)",
+      "params": [
+        "pf-t5-x0",
+        "pf-t5",
+        "thread",
+        "🙏",
+        "{{me}}",
+        "everyone"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, ?, ?, ?, ?)",
+      "params": [
+        "pf-t7-x0",
+        "pf-t7",
+        "thread",
+        "👍",
+        "{{me}}",
+        "everyone"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_forum__reactions (id, target_id, target_type, emoji, author_id, visibility) VALUES (?, ?, ?, ?, ?, ?)",
+      "params": [
+        "pf-t9-x0",
+        "pf-t9",
+        "thread",
+        "❤️",
+        "{{me}}",
+        "everyone"
+      ]
+    }
+  ]
+}
