@@ -337,6 +337,8 @@
       background: var(--surface, var(--card, #fff)); color: var(--text, inherit);
     }
     .search-input:focus { outline: none; border-color: var(--accent, #6366f1); }
+    .load-error { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #b91c1c); font-size: 0.9rem; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+    .load-error-retry { background: none; border: 1px solid currentColor; border-radius: 8px; padding: 5px 10px; font: inherit; font-weight: 600; color: inherit; cursor: pointer; flex-shrink: 0; }
   </style>
 <base href="/run/forum/">
 </head>
@@ -419,10 +421,11 @@ async function loadMembers() {
     ];
     return;
   }
-  try {
-    const res = await fetch(`${CONTEXT}?keys=family.members`);
-    members = ((await res.json())["family.members"]) ?? [];
-  } catch { members = []; }
+  // A member list that could not be read is a failed load, not a household with nobody in it.
+  const res = await fetch(`${CONTEXT}?keys=family.members`);
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data || typeof data !== "object" || data.error || (Array.isArray(data.$errors) && data.$errors.includes("family.members"))) throw new Error("Couldn’t reach the hub. Try again.");
+  members = data["family.members"] ?? [];
 }
 
 async function loadCategories() {
@@ -753,9 +756,9 @@ function renderThreadList() {
         const preview = stripMarkdown(t.body).slice(0, 130);
         const moderates = canModerateThread(t, currentMember, TENANT);
         return `
-          <div class="thread-card" data-action="open-thread" data-id="${esc(t.id)}">
+          <div class="thread-card" data-action="open-thread" data-id="${esc(t.id)}" data-testid="thread-card" data-thread-id="${esc(t.id)}">
             <div class="thread-card-inner">
-              <div class="thread-title">
+              <div class="thread-title" data-testid="thread-title" data-thread-id="${esc(t.id)}">
                 ${t.pinned ? `<span class="pin-icon">${glyph("pinboard")}</span>` : ""}
                 ${esc(t.title)}
               </div>
@@ -771,11 +774,11 @@ function renderThreadList() {
                 ${moderates ? `
                   <span class="sep">·</span>
                   <button class="btn btn-xs btn-ghost" style="padding:1px 7px"
-                    data-action="pin" data-id="${esc(t.id)}">
+                    data-action="pin" data-id="${esc(t.id)}" data-testid="thread-pin" data-thread-id="${esc(t.id)}">
                     ${t.pinned ? "Unpin" : "Pin"}
                   </button>
                   <button class="btn btn-xs" style="padding:1px 7px;border:1.5px solid var(--border-mid);color:var(--red);background:transparent"
-                    data-action="delete-thread" data-id="${esc(t.id)}">
+                    data-action="delete-thread" data-id="${esc(t.id)}" data-testid="thread-delete" data-thread-id="${esc(t.id)}">
                     Delete
                   </button>
                 ` : ""}
@@ -849,13 +852,13 @@ function renderThreadDetail() {
         <p style="color:var(--muted);font-size:0.85rem">No replies yet — be the first to respond.</p>
        </div>`
     : currentReplies.map(r => `
-        <div class="reply-card">
+        <div class="reply-card" data-testid="reply-card" data-reply-id="${esc(r.id)}">
           <div class="reply-header">
             <div class="avatar" style="background:${memberColor(String(r.author_id ?? ""))}">${esc(initial(r.author_name))}</div>
             <span class="reply-author">${esc(r.author_name)}</span>
             <span class="reply-date">${formatRelativeDate(r.created_at)}</span>
             ${canDeleteReply(r, currentMember, TENANT)
-              ? `<button class="reply-delete" data-action="delete-reply" data-id="${esc(r.id)}">Delete</button>`
+              ? `<button class="reply-delete" data-action="delete-reply" data-id="${esc(r.id)}" data-testid="reply-delete" data-reply-id="${esc(r.id)}">Delete</button>`
               : ""}
           </div>
           <div class="md-body">${renderMarkdown(r.body)}</div>
@@ -866,7 +869,7 @@ function renderThreadDetail() {
   document.getElementById("root").innerHTML = `
     <button class="back-btn" onclick="backToList()">← Forum</button>
 
-    <div class="thread-detail-header">
+    <div class="thread-detail-header" data-testid="thread-detail" data-thread-id="${esc(t.id)}">
       <div class="thread-detail-title">
         ${t.pinned ? `<span style="margin-right:6px">${glyph("pinboard")}</span>` : ""}${esc(t.title)}
       </div>
@@ -880,11 +883,11 @@ function renderThreadDetail() {
       ${renderReactionBar(t.id, "thread")}
       ${moderates ? `
         <div class="thread-detail-actions">
-          <button class="btn btn-ghost btn-sm" data-action="pin" data-id="${esc(t.id)}">
+          <button class="btn btn-ghost btn-sm" data-action="pin" data-id="${esc(t.id)}" data-testid="thread-detail-pin">
             ${glyph("pinboard")} ${t.pinned ? "Unpin" : "Pin thread"}
           </button>
           <button class="btn btn-sm" style="border:1.5px solid var(--border-mid);color:var(--red);background:transparent"
-            data-action="delete-thread" data-id="${esc(t.id)}">
+            data-action="delete-thread" data-id="${esc(t.id)}" data-testid="thread-detail-delete">
             Delete thread
           </button>
         </div>` : ""}
@@ -1261,15 +1264,10 @@ function showError(el, msg) {
   el.style.display = "block";
 }
 
-function renderLoadFailure(error) {
-  const message = error?.message ?? "Something went wrong.";
+function renderLoadFailure() {
   document.getElementById("root").innerHTML = `
-    <div class="empty" style="text-align:center;padding:32px 16px">
-      <div style="margin-bottom:8px">${chickadee("perched", { size: 72 })}</div>
-      <p style="font-weight:600;margin-bottom:4px">The forum couldn't load.</p>
-      <p style="color:var(--muted);font-size:.85rem;margin-bottom:14px">${esc(message)}</p>
-      <button class="btn btn-primary btn-sm" onclick="window.location.reload()">Try again</button>
-    </div>`;
+    <div class="page-header"><h1>Forum</h1></div>
+    <div class="load-error" data-testid="load-error" role="alert"><span>Couldn’t load the forum.</span> <button type="button" class="load-error-retry" data-testid="load-retry">Try again</button></div>`;
 }
 
 // ── Deep link ─────────────────────────────────────────────────────────────────
@@ -1282,8 +1280,8 @@ function handleDeepLink() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 // Wrapped in a catch: an unhandled rejection here left the page on its
 // "Loading…" placeholder forever, with the real cause visible only in a console
-// nobody opens. Any failure now renders an error state with a retry.
-(async () => {
+// nobody opens. Any failure now renders the failed-load banner with a retry.
+async function firstLoad() {
   try {
     await Promise.all([loadMembers(), setupSchema()]);
     await Promise.all([loadCategories(), loadThreads()]);
@@ -1295,10 +1293,14 @@ function handleDeepLink() {
     }
     render();
     handleDeepLink();
-  } catch (e) {
-    renderLoadFailure(e);
+  } catch {
+    renderLoadFailure();
   }
-})();
+}
+document.addEventListener("click", (e) => {
+  if (e.target.closest('[data-testid="load-retry"]')) firstLoad();
+});
+firstLoad();
 </script>
 </body>
 </html>

@@ -186,6 +186,192 @@
           "selector": ".thread-card[data-id=\"ui-t2\"] .pin-icon"
         }
       ]
+    },
+    {
+      "name": "in a shared space a participant is offered pin and delete only on their own thread and delete only on their own reply; the steward is offered them on everyone's",
+      "context": "shared_space",
+      "members": {
+        "steward": "admin",
+        "pat": "adult",
+        "sam": "adult"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, pinned, reply_count, created_at, updated_at, visibility) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 'everyone')",
+          "params": [
+            "sp-t-sam",
+            "Spring cleanup",
+            "Which weekend suits everyone?",
+            "{{sam}}",
+            "Sam",
+            2,
+            "2026-01-02T00:00:00Z",
+            "2026-01-02T00:00:00Z"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, pinned, reply_count, created_at, updated_at, visibility) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 'everyone')",
+          "params": [
+            "sp-t-pat",
+            "Tool library",
+            "I can lend a ladder.",
+            "{{pat}}",
+            "Pat",
+            0,
+            "2026-01-03T00:00:00Z",
+            "2026-01-03T00:00:00Z"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": [
+            "sp-r-sam",
+            "sp-t-sam",
+            "The second one works for me.",
+            "{{sam}}",
+            "Sam",
+            "2026-01-04T00:00:00Z"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__replies (id, thread_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "params": [
+            "sp-r-pat",
+            "sp-t-sam",
+            "Either is fine.",
+            "{{pat}}",
+            "Pat",
+            "2026-01-05T00:00:00Z"
+          ]
+        },
+        {
+          "action": "open",
+          "as": "pat"
+        },
+        {
+          "action": "expectVisible",
+          "as": "pat",
+          "selector": "[data-testid=\"thread-card\"][data-thread-id=\"sp-t-sam\"]"
+        },
+        {
+          "action": "expectVisible",
+          "as": "pat",
+          "selector": "[data-testid=\"thread-pin\"][data-thread-id=\"sp-t-pat\"]"
+        },
+        {
+          "action": "expectCount",
+          "as": "pat",
+          "selector": "[data-testid=\"thread-pin\"]",
+          "count": 1
+        },
+        {
+          "action": "expectCount",
+          "as": "pat",
+          "selector": "[data-testid=\"thread-delete\"]",
+          "count": 1
+        },
+        {
+          "action": "click",
+          "as": "pat",
+          "selector": "[data-testid=\"thread-title\"][data-thread-id=\"sp-t-sam\"]"
+        },
+        {
+          "action": "expectVisible",
+          "as": "pat",
+          "selector": "[data-testid=\"thread-detail\"][data-thread-id=\"sp-t-sam\"]"
+        },
+        {
+          "action": "expectCount",
+          "as": "pat",
+          "selector": "[data-testid=\"reply-card\"]",
+          "count": 2
+        },
+        {
+          "action": "expectCount",
+          "as": "pat",
+          "selector": "[data-testid=\"thread-detail-pin\"]",
+          "count": 0
+        },
+        {
+          "action": "expectCount",
+          "as": "pat",
+          "selector": "[data-testid=\"thread-detail-delete\"]",
+          "count": 0
+        },
+        {
+          "action": "expectVisible",
+          "as": "pat",
+          "selector": "[data-testid=\"reply-delete\"][data-reply-id=\"sp-r-pat\"]"
+        },
+        {
+          "action": "expectCount",
+          "as": "pat",
+          "selector": "[data-testid=\"reply-delete\"]",
+          "count": 1
+        },
+        {
+          "action": "open",
+          "as": "steward"
+        },
+        {
+          "action": "expectVisible",
+          "as": "steward",
+          "selector": "[data-testid=\"thread-card\"][data-thread-id=\"sp-t-sam\"]"
+        },
+        {
+          "action": "expectVisible",
+          "as": "steward",
+          "selector": "[data-testid=\"thread-pin\"][data-thread-id=\"sp-t-pat\"]"
+        },
+        {
+          "action": "expectCount",
+          "as": "steward",
+          "selector": "[data-testid=\"thread-pin\"]",
+          "count": 2
+        },
+        {
+          "action": "expectCount",
+          "as": "steward",
+          "selector": "[data-testid=\"thread-delete\"]",
+          "count": 2
+        },
+        {
+          "action": "click",
+          "as": "steward",
+          "selector": "[data-testid=\"thread-title\"][data-thread-id=\"sp-t-sam\"]"
+        },
+        {
+          "action": "expectVisible",
+          "as": "steward",
+          "selector": "[data-testid=\"thread-detail\"][data-thread-id=\"sp-t-sam\"]"
+        },
+        {
+          "action": "expectCount",
+          "as": "steward",
+          "selector": "[data-testid=\"reply-card\"]",
+          "count": 2
+        },
+        {
+          "action": "expectVisible",
+          "as": "steward",
+          "selector": "[data-testid=\"thread-detail-pin\"]"
+        },
+        {
+          "action": "expectVisible",
+          "as": "steward",
+          "selector": "[data-testid=\"thread-detail-delete\"]"
+        },
+        {
+          "action": "expectCount",
+          "as": "steward",
+          "selector": "[data-testid=\"reply-delete\"]",
+          "count": 2
+        }
+      ]
     }
   ]
 }
