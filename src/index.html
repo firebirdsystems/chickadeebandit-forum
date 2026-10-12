@@ -537,7 +537,8 @@ async function toggleReaction(targetId, targetType, emoji) {
   } catch (e) {
     reactions = prevReactions;
     render();
-    hubAlert(e.message ?? "Could not save your reaction.");
+    console.error(e);
+    hubAlert("Couldn’t save your reaction — try again.");
   }
 }
 
@@ -553,15 +554,17 @@ async function togglePin(threadId) {
   if (currentThread?.id === threadId) currentThread = { ...currentThread, pinned: next };
   render();
 
+  let refused = null;
   try {
     const { changed } = await dbq(`UPDATE app_forum__threads SET pinned=? WHERE id=?`, [next ? 1 : 0, threadId]);
     // The hub changes nothing, without refusing, on a thread the caller may not write.
-    if (changed === 0) throw new Error(next ? "This thread could not be pinned." : "This thread could not be unpinned.");
+    if (changed === 0) throw new Error(refused = next ? "This thread could not be pinned." : "This thread could not be unpinned.");
   } catch (e) {
     threads = prevThreads;
     if (currentThread?.id === threadId) currentThread = prevCurrentThread;
     render();
-    hubAlert(e.message ?? "Could not update thread.");
+    if (!refused) console.error(e);
+    hubAlert(refused ?? (next ? "Couldn’t pin the thread — try again." : "Couldn’t unpin the thread — try again."));
   }
 }
 
@@ -610,31 +613,34 @@ async function deleteReply(replyId) {
   currentThread = { ...currentThread, reply_count: Math.max(0, Number(currentThread.reply_count) - 1) };
   render();
 
+  let refused = null;
   try {
     // The caller's own reactions on the reply go first; other members' stay in
     // the table unread (reactions are owner-written).
     await dbq(`DELETE FROM app_forum__reactions WHERE target_id=?`, [replyId]);
     const { changed } = await dbq(`DELETE FROM app_forum__replies WHERE id=?`, [replyId]);
     // The hub deletes nothing, without refusing, for a reply the caller may not remove.
-    if (changed === 0) throw new Error("This reply could not be deleted.");
+    if (changed === 0) throw new Error(refused = "This reply could not be deleted.");
   } catch (e) {
     currentReplies = prevReplies;
     currentThread = prevCurrentThread;
     render();
-    hubAlert(e.message ?? "Could not delete reply.");
+    if (!refused) console.error(e);
+    hubAlert(refused ?? "Couldn’t delete the reply — try again.");
   }
 }
 
 // Category management. Each returns whether the write landed, having already
 // told the member when it did not.
-async function categoryWrite(write) {
+async function categoryWrite(write, failure) {
   try {
     await write();
     await loadCategories();
     render();
     return true;
   } catch (e) {
-    hubAlert(e.message ?? "Could not save the category.");
+    console.error(e);
+    hubAlert(failure);
     return false;
   }
 }
@@ -643,14 +649,15 @@ function saveCategory(id, name, color) {
   const trimmed = name.trim();
   if (!trimmed) { hubAlert("A category needs a name."); return Promise.resolve(false); }
   return categoryWrite(() =>
-    dbq(`UPDATE app_forum__categories SET name=?, color=? WHERE id=?`, [trimmed, safeColor(color), id]));
+    dbq(`UPDATE app_forum__categories SET name=?, color=? WHERE id=?`, [trimmed, safeColor(color), id]),
+    "Couldn’t save the category — try again.");
 }
 
 function addCategory(name, color) {
   return categoryWrite(() => dbq(
     `INSERT INTO app_forum__categories (id, name, color, position, created_at) VALUES (?,?,?,?,?)`,
     [uuid(), name, safeColor(color), categories.length, new Date().toISOString()]
-  ));
+  ), "Couldn’t add the category — try again.");
 }
 
 async function deleteCategory(id) {
@@ -662,7 +669,7 @@ async function deleteCategory(id) {
       categoryFilter = null;
       await loadThreads();
     }
-  });
+  }, "Couldn’t delete the category — try again.");
 }
 
 // ── Modal helpers ─────────────────────────────────────────────────────────────
@@ -966,6 +973,7 @@ window.toggleNewThreadPreview = function() {
   }
 };
 
+let postingThread = false;
 window.submitNewThread = async function() {
   const title = document.getElementById("thread-title")?.value?.trim();
   // While previewing, the textarea is not in the page: the text is held on the wrapper.
@@ -979,19 +987,40 @@ window.submitNewThread = async function() {
   if (!body)  { showError(errEl, "Please write something."); return; }
   errEl.style.display = "none";
 
+  if (postingThread) return;
   const id  = uuid();
   const now = new Date().toISOString();
 
-  // Optimistic: add to local state and navigate immediately
-  const optimisticThread = {
+  // The form stays open until the hub has the thread: a post that fails says
+  // so in the form and leaves what was typed in place to send again.
+  const postBtn = modalEl?.querySelector(".modal-actions .btn-primary");
+  postingThread = true;
+  if (postBtn) postBtn.disabled = true;
+  try {
+    await dbq(
+      // `pinned` is left to its default: only adults may write that column.
+      `INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [id, title.trim(), body.trim(), catId || null,
+       currentMember.id, currentMember.name, now, now]
+    );
+  } catch {
+    showError(errEl, "Couldn’t post the thread — try again.");
+    return;
+  } finally {
+    postingThread = false;
+    if (postBtn) postBtn.disabled = false;
+  }
+
+  const newThread = {
     id, title: title.trim(), body: body.trim(),
     category_id: catId || null,
     author_id: currentMember.id, author_name: currentMember.name,
     pinned: false, created_at: now, updated_at: now,
     reply_count: 0, reaction_count: 0,
   };
-  threads.unshift(optimisticThread);
-  currentThread  = optimisticThread;
+  threads.unshift(newThread);
+  currentThread  = newThread;
   currentReplies = [];
   reactions      = {};
   view           = "thread";
@@ -1001,39 +1030,20 @@ window.submitNewThread = async function() {
   render();
   window.scrollTo({ top: 0, behavior: "smooth" });
 
-  try {
-    await dbq(
-      // `pinned` is left to its default: only adults may write that column.
-      `INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      [id, title.trim(), body.trim(), catId || null,
-       currentMember.id, currentMember.name, now, now]
-    );
-    if (CONTEXT) {
-      fetch(`/run/${APP_ID}/api/events`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: title.trim() } }),
-      }).catch(() => {});
-      fetch(window.__ACTIVITY_URL ?? "/api/activity", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "conversation_message_posted",
-          actor: currentMember.name,
-          description: `${currentMember.name} started a new thread: "${title.trim().slice(0, 60)}"`,
-          metadata: { deepLink: { appId: APP_ID, params: { threadId: id } } },
-        }),
-      }).catch(() => {});
-    }
-  } catch (e) {
-    // Rollback optimistic update
-    threads = threads.filter(t => t.id !== id);
-    if (currentThread?.id === id) {
-      view = "list";
-      currentThread = null;
-      currentReplies = [];
-    }
-    render();
-    hubAlert(e.message ?? "Could not post thread.");
+  if (CONTEXT) {
+    fetch(`/run/${APP_ID}/api/events`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: title.trim() } }),
+    }).catch(() => {});
+    fetch(window.__ACTIVITY_URL ?? "/api/activity", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "conversation_message_posted",
+        actor: currentMember.name,
+        description: `${currentMember.name} started a new thread: "${title.trim().slice(0, 60)}"`,
+        metadata: { deepLink: { appId: APP_ID, params: { threadId: id } } },
+      }),
+    }).catch(() => {});
   }
 };
 
@@ -1083,7 +1093,8 @@ window.submitReply = async function() {
     currentThread = { ...currentThread, reply_count: Number(currentThread.reply_count) - 1 };
     _replyBodyCache = body;
     render();
-    showError(document.getElementById("reply-error"), e.message ?? "Could not post reply.");
+    console.error(e);
+    showError(document.getElementById("reply-error"), "Couldn’t post your reply — try again.");
   }
 };
 

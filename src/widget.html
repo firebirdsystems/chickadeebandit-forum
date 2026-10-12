@@ -109,6 +109,7 @@
     }
     .open-link:hover { text-decoration: underline; }
 
+    .load-error { margin: 8px; padding: 8px 10px; border-radius: 10px; background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #b91c1c); font-size: 0.8rem; }
     .empty {
       flex: 1;
       display: flex;
@@ -166,6 +167,13 @@ function navigate(params = {}) {
   window.parent.postMessage({ type: "hub:open", appId: APP_ID, params }, "*");
 }
 
+// Delegated clicks: navigate is module-scoped, so inline on* handlers can't
+// reach it, and interpolating ids into inline handlers is an injection sink.
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-nav]");
+  if (el) navigate(el.dataset.thread ? { threadId: el.dataset.thread } : {});
+});
+
 function render(threads, categories) {
   const catMap = Object.fromEntries(categories.map(c => [c.id, c]));
 
@@ -178,7 +186,7 @@ function render(threads, categories) {
   if (threads.length === 0) {
     rows = `<div class="empty">
       <span>No threads yet</span>
-      <button onclick="navigate()" style="color:#111827;font-weight:600;font-size:11px;background:none;border:none;cursor:pointer">Start a discussion →</button>
+      <button data-nav style="color:#111827;font-weight:600;font-size:11px;background:none;border:none;cursor:pointer">Start a discussion →</button>
     </div>`;
   } else {
     rows = `<div class="thread-list">
@@ -190,7 +198,7 @@ function render(threads, categories) {
         const pin  = t.pinned ? `<span class="pin-icon">${glyph("pinboard")}</span>` : "";
         const cnt  = Number(t.reply_count);
         return `
-          <button class="thread-row" onclick="navigate({threadId:'${t.id}'})" style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #f3f4f6;">
+          <button class="thread-row" data-nav data-thread="${esc(t.id)}" style="width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #f3f4f6;">
             ${dot}
             <div class="thread-main">
               <div class="thread-title">${pin}${esc(t.title)}</div>
@@ -208,8 +216,8 @@ function render(threads, categories) {
 
   const footer = `
     <div class="footer">
-      <button class="open-link" onclick="navigate()" style="background:none;border:none;cursor:pointer;">View all →</button>
-      <button class="new-link" onclick="navigate()" style="cursor:pointer;">+ New thread</button>
+      <button class="open-link" data-nav style="background:none;border:none;cursor:pointer;">View all →</button>
+      <button class="new-link" data-nav style="cursor:pointer;">+ New thread</button>
     </div>`;
 
   document.body.innerHTML = header + rows + footer;
@@ -217,6 +225,7 @@ function render(threads, categories) {
 
 load().catch(() => {
   document.body.innerHTML = `
+    <div class="load-error" data-testid="load-error" role="alert">Couldn’t load the forum.</div>
     <div class="empty"><a href="/run/${APP_ID}" style="color:#111827;font-weight:600">Open Forum →</a></div>`;
 });
 
