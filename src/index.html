@@ -1283,9 +1283,11 @@ function renderLoadFailure() {
 
 // ── Deep link ─────────────────────────────────────────────────────────────────
 function handleDeepLink() {
-  const threadId = new URLSearchParams(window.location.search).get("threadId");
-  if (!threadId) return;
-  openThread(threadId);
+  const params = new URLSearchParams(window.location.search);
+  const threadId = params.get("threadId");
+  if (threadId) { openThread(threadId); return; }
+  // The widget's "+ New thread" button arrives as ?new=1.
+  if (params.get("new")) openNewThread();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────

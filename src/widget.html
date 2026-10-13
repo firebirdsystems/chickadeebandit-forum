@@ -125,7 +125,7 @@
 <body>
 <script type="module">
 import { esc, formatRelativeDate, glyph } from "/hub-sdk.js";
-import { stripMarkdown } from "./logic.js";
+import { stripMarkdown, safeColor } from "./logic.js";
 
 const DB     = window.__DB_URL  ?? "";
 const EVENTS = window.__EVENTS_URL ?? "";
@@ -171,7 +171,7 @@ function navigate(params = {}) {
 // reach it, and interpolating ids into inline handlers is an injection sink.
 document.addEventListener("click", e => {
   const el = e.target.closest("[data-nav]");
-  if (el) navigate(el.dataset.thread ? { threadId: el.dataset.thread } : {});
+  if (el) navigate(el.dataset.thread ? { threadId: el.dataset.thread } : el.dataset.new ? { new: "1" } : {});
 });
 
 function render(threads, categories) {
@@ -193,7 +193,7 @@ function render(threads, categories) {
       ${threads.map(t => {
         const cat  = catMap[t.category_id];
         const dot  = cat
-          ? `<span class="cat-dot" style="background:${cat.color}" title="${esc(cat.name)}"></span>`
+          ? `<span class="cat-dot" style="background:${safeColor(cat.color)}" title="${esc(cat.name)}"></span>`
           : `<span class="cat-dot" style="background:#e5e7eb"></span>`;
         const pin  = t.pinned ? `<span class="pin-icon">${glyph("pinboard")}</span>` : "";
         const cnt  = Number(t.reply_count);
@@ -217,7 +217,7 @@ function render(threads, categories) {
   const footer = `
     <div class="footer">
       <button class="open-link" data-nav style="background:none;border:none;cursor:pointer;">View all →</button>
-      <button class="new-link" data-nav style="cursor:pointer;">+ New thread</button>
+      <button class="new-link" data-nav data-new="1" style="cursor:pointer;">+ New thread</button>
     </div>`;
 
   document.body.innerHTML = header + rows + footer;
