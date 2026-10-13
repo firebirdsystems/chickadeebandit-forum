@@ -186,7 +186,7 @@ function render(threads, categories) {
   if (threads.length === 0) {
     rows = `<div class="empty">
       <span>No threads yet</span>
-      <button data-nav style="color:#111827;font-weight:600;font-size:11px;background:none;border:none;cursor:pointer">Start a discussion →</button>
+      <button data-nav data-new="1" style="color:#111827;font-weight:600;font-size:11px;background:none;border:none;cursor:pointer">Start a discussion →</button>
     </div>`;
   } else {
     rows = `<div class="thread-list">

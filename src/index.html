@@ -615,12 +615,13 @@ async function deleteReply(replyId) {
 
   let refused = null;
   try {
-    // The caller's own reactions on the reply go first; other members' stay in
-    // the table unread (reactions are owner-written).
-    await dbq(`DELETE FROM app_forum__reactions WHERE target_id=?`, [replyId]);
     const { changed } = await dbq(`DELETE FROM app_forum__replies WHERE id=?`, [replyId]);
     // The hub deletes nothing, without refusing, for a reply the caller may not remove.
     if (changed === 0) throw new Error(refused = "This reply could not be deleted.");
+    // The caller's own reactions on the reply go once it is gone, so a reply
+    // that stays keeps them; other members' stay in the table unread (reactions
+    // are owner-written). A failure here leaves the same unread rows.
+    dbq(`DELETE FROM app_forum__reactions WHERE target_id=?`, [replyId]).catch(e => console.error(e));
   } catch (e) {
     currentReplies = prevReplies;
     currentThread = prevCurrentThread;
@@ -634,9 +635,16 @@ async function deleteReply(replyId) {
 // told the member when it did not.
 async function categoryWrite(write, failure) {
   try {
-    await write();
+    const res = await write();
     await loadCategories();
     render();
+    // The hub changes nothing, without refusing, on a category the caller may
+    // not write or that is already gone: say so over the list as stored.
+    if (res?.changed === 0) {
+      if (modalEl?.querySelector("#cat-list")) renderSettingsModal();   // only while Settings is still the open dialog
+      hubAlert(failure);
+      return false;
+    }
     return true;
   } catch (e) {
     console.error(e);
@@ -664,11 +672,12 @@ async function deleteCategory(id) {
   if (!await hubConfirm({ message: "Delete this category?", description: "Threads in it will become uncategorised.", confirmLabel: "Delete category", destructive: true })) return false;
   return categoryWrite(async () => {
     await dbq(`UPDATE app_forum__threads SET category_id=NULL WHERE category_id=?`, [id]);
-    await dbq(`DELETE FROM app_forum__categories WHERE id=?`, [id]);
+    const res = await dbq(`DELETE FROM app_forum__categories WHERE id=?`, [id]);
     if (categoryFilter === id) {
       categoryFilter = null;
       await loadThreads();
     }
+    return res;
   }, "Couldn’t delete the category — try again.");
 }
 
@@ -1004,7 +1013,8 @@ window.submitNewThread = async function() {
       [id, title.trim(), body.trim(), catId || null,
        currentMember.id, currentMember.name, now, now]
     );
-  } catch {
+  } catch (e) {
+    console.error(e);
     showError(errEl, "Couldn’t post the thread — try again.");
     return;
   } finally {
@@ -1208,7 +1218,8 @@ async function setCategory(id) {
   try {
     if (await loadThreads()) render();
   } catch (e) {
-    if (categoryFilter === id) hubAlert(e.message ?? "Could not load threads.");
+    console.error(e);
+    if (categoryFilter === id) hubAlert("Couldn’t load the threads — try again.");
   }
 }
 
@@ -1217,7 +1228,8 @@ async function openThreadById(id) {
   try {
     await loadThread(id);
   } catch (e) {
-    hubAlert(e.message ?? "Could not open this thread.");
+    console.error(e);
+    hubAlert("Couldn’t open this thread — try again.");
     return;
   }
   if (!currentThread) {
