@@ -1285,9 +1285,22 @@ function renderLoadFailure() {
 function handleDeepLink() {
   const params = new URLSearchParams(window.location.search);
   const threadId = params.get("threadId");
+  const startNew = params.get("new");
+  // These say what to do ONCE. Left on the page's address they are replayed by
+  // every reload — the composer reopens, the thread reopens after the reader
+  // has gone back to the list. Everything else on the address stays.
+  if (threadId || startNew) {
+    params.delete("threadId");
+    params.delete("new");
+    const rest = params.toString();
+    // Tidying the address must never be what stops the thread from opening.
+    try {
+      history.replaceState(history.state, "", `${location.pathname}${rest ? `?${rest}` : ""}${location.hash}`);
+    } catch { /* the params stay; a reload replays them, as before */ }
+  }
   if (threadId) { openThread(threadId); return; }
   // The widget's "+ New thread" button arrives as ?new=1.
-  if (params.get("new")) openNewThread();
+  if (startNew) openNewThread();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
