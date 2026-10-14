@@ -353,6 +353,7 @@ import {
   renderMarkdown, applyInline, stripMarkdown,
   groupReactions, hasReacted, reactionSummary, sortThreads, searchableFields, canDeleteReply, canModerateThread,
   safeColor, authorName, createLatestLoader,
+  outcomeUnknown, storedDiffers, SAVED_AS_FIRST, failureLine,
 } from "./logic.js";
 
 // ── Runtime globals ───────────────────────────────────────────────────────────
@@ -396,6 +397,17 @@ let replyPreview   = false;       // preview in reply form
 const dbq = createDbHelper(DB);
 
 function uuid() { return crypto.randomUUID(); }
+
+// An error whose message the app wrote for the member; anything else (the
+// hub's own text) is replaced by logic.js failureLine.
+function userError(message) { return Object.assign(new Error(message), { forUser: true }); }
+
+// After a write that changed nothing: is the row still there? true or false,
+// or null when the re-read itself failed (see logic.js failureLine `found`).
+async function stillThere(sql, params) {
+  try { return ((await dbq(sql, params)).rows?.length ?? 0) > 0; }
+  catch (e) { console.error(e); return null; }
+}
 
 // ── Schema setup ──────────────────────────────────────────────────────────────
 async function setupSchema() {
@@ -538,7 +550,7 @@ async function toggleReaction(targetId, targetType, emoji) {
     reactions = prevReactions;
     render();
     console.error(e);
-    hubAlert("Couldn’t save your reaction — try again.");
+    hubAlert(failureLine(e, { action: "save your reaction", thing: "reaction" }));
   }
 }
 
@@ -554,17 +566,20 @@ async function togglePin(threadId) {
   if (currentThread?.id === threadId) currentThread = { ...currentThread, pinned: next };
   render();
 
-  let refused = null;
+  const words = { action: next ? "pin the thread" : "unpin the thread", thing: "thread" };
   try {
     const { changed } = await dbq(`UPDATE app_forum__threads SET pinned=? WHERE id=?`, [next ? 1 : 0, threadId]);
     // The hub changes nothing, without refusing, on a thread the caller may not write.
-    if (changed === 0) throw new Error(refused = next ? "This thread could not be pinned." : "This thread could not be unpinned.");
+    if (changed === 0) {
+      const found = await stillThere(`SELECT id FROM app_forum__threads WHERE id = ?`, [threadId]);
+      throw userError(failureLine(null, { ...words, found }));
+    }
   } catch (e) {
     threads = prevThreads;
     if (currentThread?.id === threadId) currentThread = prevCurrentThread;
     render();
-    if (!refused) console.error(e);
-    hubAlert(refused ?? (next ? "Couldn’t pin the thread — try again." : "Couldn’t unpin the thread — try again."));
+    if (!e?.forUser) console.error(e);
+    hubAlert(failureLine(e, words));
   }
 }
 
@@ -584,7 +599,8 @@ async function deleteThread(threadId) {
   }
   render();
 
-  let refused = null;
+  const words = { action: "delete the thread", thing: "thread" };
+  let gone = false;   // already removed: it stays off the list
   try {
     // One statement: `manifest.delete_cascades` has the hub remove the replies
     // and every reaction under the thread, whoever wrote them, in the same
@@ -593,15 +609,21 @@ async function deleteThread(threadId) {
     // part-way when a request was lost.
     const { changed } = await dbq(`DELETE FROM app_forum__threads WHERE id = ?`, [threadId]);
     // The hub deletes nothing, without refusing, for a thread the caller may not remove.
-    if (changed === 0) throw new Error(refused = "This thread could not be deleted.");
+    if (changed === 0) {
+      const found = await stillThere(`SELECT id FROM app_forum__threads WHERE id = ?`, [threadId]);
+      gone = found === false;
+      throw userError(failureLine(null, { ...words, found }));
+    }
   } catch (e) {
-    threads = prevThreads;
-    view = prevView;
-    currentThread = prevCurrentThread;
-    currentReplies = prevCurrentReplies;
-    render();
-    if (!refused) console.error(e);
-    hubAlert(refused ?? "Couldn’t delete the thread — try again.");
+    if (!gone) {
+      threads = prevThreads;
+      view = prevView;
+      currentThread = prevCurrentThread;
+      currentReplies = prevCurrentReplies;
+      render();
+    }
+    if (!e?.forUser) console.error(e);
+    hubAlert(failureLine(e, words));
   }
 }
 
@@ -615,45 +637,59 @@ async function deleteReply(replyId) {
   currentThread = { ...currentThread, reply_count: Math.max(0, Number(currentThread.reply_count) - 1) };
   render();
 
-  let refused = null;
+  const words = { action: "delete the reply", thing: "reply" };
+  let gone = false;   // already removed: it stays off the list
   try {
     const { changed } = await dbq(`DELETE FROM app_forum__replies WHERE id=?`, [replyId]);
     // The hub deletes nothing, without refusing, for a reply the caller may not remove.
-    if (changed === 0) throw new Error(refused = "This reply could not be deleted.");
+    if (changed === 0) {
+      const found = await stillThere(`SELECT id FROM app_forum__replies WHERE id = ?`, [replyId]);
+      gone = found === false;
+      throw userError(failureLine(null, { ...words, found }));
+    }
     // The caller's own reactions on the reply go once it is gone, so a reply
     // that stays keeps them; other members' stay in the table unread (reactions
     // are owner-written). A failure here leaves the same unread rows.
     dbq(`DELETE FROM app_forum__reactions WHERE target_id=?`, [replyId]).catch(e => console.error(e));
   } catch (e) {
-    currentReplies = prevReplies;
-    currentThread = prevCurrentThread;
-    render();
-    if (!refused) console.error(e);
-    hubAlert(refused ?? "Couldn’t delete the reply — try again.");
+    if (!gone) {
+      currentReplies = prevReplies;
+      currentThread = prevCurrentThread;
+      render();
+    }
+    if (!e?.forUser) console.error(e);
+    hubAlert(failureLine(e, words));
   }
 }
 
 // Category management. Each returns whether the write landed, having already
-// told the member when it did not.
-async function categoryWrite(write, failure) {
+// told the member when it did not. `saved` patches the local list from the
+// values the hub has just stored.
+async function categoryWrite(write, { id, ...words }, saved) {
   let res;
   try {
     res = await write();
   } catch (e) {
     console.error(e);
-    hubAlert(failure);
+    hubAlert(failureLine(e, words));
     return false;
   }
-  // The write is stored by here: a re-read that fails is not a failed write.
-  await loadCategories().catch(e => console.error(e));
-  render();
   // The hub changes nothing, without refusing, on a category the caller may
-  // not write or that is already gone: say so over the list as stored.
+  // not write or that is already gone: say which over the list as stored.
   if (res?.changed === 0) {
+    let found = null;
+    try { await loadCategories(); found = categories.some(c => c.id === id); }
+    catch (e) { console.error(e); }
+    render();
     if (modalEl?.querySelector("#cat-list")) renderSettingsModal();   // only while Settings is still the open dialog
-    hubAlert(failure);
+    hubAlert(failureLine(null, { ...words, found }));
     return false;
   }
+  // The write is stored: drawn from what was saved at once, then re-read. A
+  // re-read that fails keeps the list as drawn and is not a failed write.
+  saved();
+  render();
+  loadCategories().then(render, e => console.error(e));
   return true;
 }
 
@@ -662,14 +698,17 @@ function saveCategory(id, name, color) {
   if (!trimmed) { hubAlert("A category needs a name."); return Promise.resolve(false); }
   return categoryWrite(() =>
     dbq(`UPDATE app_forum__categories SET name=?, color=? WHERE id=?`, [trimmed, safeColor(color), id]),
-    "Couldn’t save the category — try again.");
+    { id, action: "save the category", thing: "category" },
+    () => { categories = categories.map(c => c.id === id ? { ...c, name: trimmed, color: safeColor(color) } : c); });
 }
 
 function addCategory(name, color) {
+  const row = { id: uuid(), name, color: safeColor(color), position: categories.length, created_at: new Date().toISOString() };
   return categoryWrite(() => dbq(
     `INSERT INTO app_forum__categories (id, name, color, position, created_at) VALUES (?,?,?,?,?)`,
-    [uuid(), name, safeColor(color), categories.length, new Date().toISOString()]
-  ), "Couldn’t add the category — try again.");
+    [row.id, row.name, row.color, row.position, row.created_at]
+  ), { id: row.id, action: "add the category", thing: "category" },
+  () => { categories = [...categories.filter(c => c.id !== row.id), row]; });
 }
 
 async function deleteCategory(id) {
@@ -691,7 +730,8 @@ async function deleteCategory(id) {
       await loadThreads().catch(e => { console.error(e); hubAlert("Couldn’t load the threads — try again."); });
     }
     return res;
-  }, "Couldn’t delete the category — try again.");
+  }, { id, action: "delete the category", thing: "category" },
+  () => { categories = categories.filter(c => c.id !== id); });
 }
 
 // ── Modal helpers ─────────────────────────────────────────────────────────────
@@ -709,6 +749,9 @@ function openModal(html) {
 }
 function closeModal() { modalEl?.remove(); modalEl = null; previewMode = false; }
 window.closeModal = closeModal;
+// Closes `el` only if it is still the open dialog (a save that ends after the
+// member opened another must not close that one).
+function closeModalIf(el) { if (el && el === modalEl) closeModal(); }
 
 // ── Markdown toolbar helper ───────────────────────────────────────────────────
 function wrapSelection(textareaId, before, after = before) {
@@ -1010,38 +1053,64 @@ window.submitNewThread = async function() {
   errEl.style.display = "none";
 
   if (postingThread) return;
-  const id  = uuid();
+  // The id is the form's, minted on its first Post and sent on every retry: a
+  // try whose answer was lost may have stored the thread, and a second press
+  // must find that row rather than post (and alert) another.
+  const form = modalEl;
+  const id  = form ? (form.dataset.rowId ||= uuid()) : uuid();
   const now = new Date().toISOString();
+  const typed = { title: title.trim(), body: body.trim(), category_id: catId || null };
 
+  let newThread = {
+    id, ...typed,
+    author_id: currentMember.id, author_name: currentMember.name,
+    pinned: false, created_at: now, updated_at: now,
+    reply_count: 0, reaction_count: 0,
+  };
+  let note = "";
   // The form stays open until the hub has the thread: a post that fails says
   // so in the form and leaves what was typed in place to send again.
   const postBtn = modalEl?.querySelector(".modal-actions .btn-primary");
   postingThread = true;
   if (postBtn) postBtn.disabled = true;
   try {
-    await dbq(
-      // `pinned` is left to its default: only adults may write that column.
-      `INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      [id, title.trim(), body.trim(), catId || null,
-       currentMember.id, currentMember.name, now, now]
-    );
+    try {
+      await dbq(
+        // `pinned` is left to its default: only adults may write that column.
+        `INSERT INTO app_forum__threads (id, title, body, category_id, author_id, author_name, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [id, typed.title, typed.body, typed.category_id,
+         currentMember.id, currentMember.name, now, now]
+      );
+    } catch (e) {
+      // Unknown outcome: read the thread back by the pinned id. Found means an
+      // earlier try landed and its alert never went, so it goes now, once.
+      // Not found, or the read failed: the post fails, the id stays pinned.
+      if (!outcomeUnknown(e)) throw e;
+      let stored = null;
+      try { stored = (await dbq("SELECT * FROM app_forum__threads WHERE id = ?", [id])).rows?.[0] ?? null; }
+      catch (readErr) {
+        // The id is ours: with the read-back failed, a UNIQUE answer may be this
+        // form's own first try, so nothing is known — "try again", not "already exists".
+        console.error(readErr);
+        throw new Error("create outcome unknown", { cause: e });
+      }
+      if (!stored) throw e;
+      console.error(e);
+      // Edited since that first try: what was stored is kept, and said so.
+      if (storedDiffers(stored, typed)) note = SAVED_AS_FIRST;
+      newThread = { ...newThread, ...stored, reply_count: 0, reaction_count: 0 };
+    }
   } catch (e) {
     console.error(e);
-    showError(errEl, "Couldn’t post the thread — try again.");
+    showError(errEl, failureLine(e, { action: "post the thread", thing: "thread" }));
     return;
   } finally {
     postingThread = false;
     if (postBtn) postBtn.disabled = false;
   }
+  if (form) delete form.dataset.rowId;
 
-  const newThread = {
-    id, title: title.trim(), body: body.trim(),
-    category_id: catId || null,
-    author_id: currentMember.id, author_name: currentMember.name,
-    pinned: false, created_at: now, updated_at: now,
-    reply_count: 0, reaction_count: 0,
-  };
   threads.unshift(newThread);
   currentThread  = newThread;
   currentReplies = [];
@@ -1049,21 +1118,23 @@ window.submitNewThread = async function() {
   view           = "thread";
   _replyBodyCache = "";
   replyPreview    = false;
-  closeModal();
+  // Only the dialog this post came from: another opened meanwhile stays open.
+  closeModalIf(form);
   render();
   window.scrollTo({ top: 0, behavior: "smooth" });
+  if (note) hubAlert(note);
 
   if (CONTEXT) {
     fetch(`/run/${APP_ID}/api/events`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: title.trim() } }),
+      body: JSON.stringify({ type: "forum.post.created", subject_id: id, payload: { author: currentMember.name, title: newThread.title } }),
     }).catch(() => {});
     fetch(window.__ACTIVITY_URL ?? "/api/activity", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         type: "conversation_message_posted",
         actor: currentMember.name,
-        description: `${currentMember.name} started a new thread: "${title.trim().slice(0, 60)}"`,
+        description: `${currentMember.name} started a new thread: "${newThread.title.slice(0, 60)}"`,
         metadata: { deepLink: { appId: APP_ID, params: { threadId: id } } },
       }),
     }).catch(() => {});
@@ -1117,7 +1188,7 @@ window.submitReply = async function() {
     _replyBodyCache = body;
     render();
     console.error(e);
-    showError(document.getElementById("reply-error"), "Couldn’t post your reply — try again.");
+    showError(document.getElementById("reply-error"), failureLine(e, { action: "post your reply", thing: "reply" }));
   }
 };
 
@@ -1222,7 +1293,7 @@ window.doAddCategory = async function() {
   const name  = document.getElementById("new-cat-name")?.value?.trim();
   const color = document.querySelector("#new-cat-swatches .swatch.selected")?.dataset.color ?? "#6b7280";
   if (!name) return;
-  if (await addCategory(name, color)) renderSettingsModal();
+  if (await addCategory(name, color) && modalEl?.querySelector("#cat-list")) renderSettingsModal();
 };
 
 // ── Global window actions ─────────────────────────────────────────────────────
@@ -1276,7 +1347,7 @@ const ACTIONS = {
   "open-picker":     el => { pickerTarget = { targetId: el.dataset.target, targetType: el.dataset.targetType }; render(); },
   "toggle-swatches": el => toggleSwatches(el),
   "pick-swatch":     el => pickSwatch(el),
-  "delete-category": async el => { if (await deleteCategory(categoryBlock(el)?.id)) renderSettingsModal(); },
+  "delete-category": async el => { if (await deleteCategory(categoryBlock(el)?.id) && modalEl?.querySelector("#cat-list")) renderSettingsModal(); },
 };
 document.addEventListener("click", (e) => {
   const el = e.target.closest?.("[data-action]");
