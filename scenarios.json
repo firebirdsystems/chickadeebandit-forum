@@ -323,6 +323,54 @@
           "expect": { "status": 200, "rowCount": 0 }
         }
       ]
+    },
+    {
+      "name": "deleting a category un-categorises its threads in the same batch; a category already gone rolls the batch back",
+      "members": { "author": "adult" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__categories (id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?)",
+          "params": ["cat1", "Plans", "#0284c7", 0, "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_forum__threads (id, title, body, author_id, author_name, category_id, created_at, updated_at, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'everyone')",
+          "params": ["tcat", "Summer", "Body", "{{author}}", "Author", "cat1", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"]
+        },
+        {
+          "action": "batch",
+          "as": "author",
+          "statements": [
+            { "sql": "UPDATE app_forum__threads SET category_id=NULL WHERE category_id=?", "params": ["cat1"] },
+            { "sql": "DELETE FROM app_forum__categories WHERE id=?", "params": ["cat1"], "requireChanges": true }
+          ],
+          "expect": { "status": 200, "changed": [1, 1] }
+        },
+        {
+          "action": "db",
+          "as": "author",
+          "sql": "SELECT id FROM app_forum__threads WHERE id = ? AND category_id IS NULL",
+          "params": ["tcat"],
+          "expect": { "status": 200, "rowCount": 1 }
+        },
+        {
+          "action": "db",
+          "as": "author",
+          "sql": "SELECT id FROM app_forum__categories WHERE id = ?",
+          "params": ["cat1"],
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "batch",
+          "as": "author",
+          "statements": [
+            { "sql": "UPDATE app_forum__threads SET category_id=NULL WHERE category_id=?", "params": ["cat1"] },
+            { "sql": "DELETE FROM app_forum__categories WHERE id=?", "params": ["cat1"], "requireChanges": true }
+          ],
+          "expect": { "status": 409 }
+        }
+      ]
     }
   ]
 }

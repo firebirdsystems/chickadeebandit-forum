@@ -584,6 +584,7 @@ async function deleteThread(threadId) {
   }
   render();
 
+  let refused = null;
   try {
     // One statement: `manifest.delete_cascades` has the hub remove the replies
     // and every reaction under the thread, whoever wrote them, in the same
@@ -592,14 +593,15 @@ async function deleteThread(threadId) {
     // part-way when a request was lost.
     const { changed } = await dbq(`DELETE FROM app_forum__threads WHERE id = ?`, [threadId]);
     // The hub deletes nothing, without refusing, for a thread the caller may not remove.
-    if (changed === 0) throw new Error("not removed");
-  } catch {
+    if (changed === 0) throw new Error(refused = "This thread could not be deleted.");
+  } catch (e) {
     threads = prevThreads;
     view = prevView;
     currentThread = prevCurrentThread;
     currentReplies = prevCurrentReplies;
     render();
-    hubAlert("This thread could not be deleted.");
+    if (!refused) console.error(e);
+    hubAlert(refused ?? "Couldn’t delete the thread — try again.");
   }
 }
 
@@ -634,23 +636,25 @@ async function deleteReply(replyId) {
 // Category management. Each returns whether the write landed, having already
 // told the member when it did not.
 async function categoryWrite(write, failure) {
+  let res;
   try {
-    const res = await write();
-    await loadCategories();
-    render();
-    // The hub changes nothing, without refusing, on a category the caller may
-    // not write or that is already gone: say so over the list as stored.
-    if (res?.changed === 0) {
-      if (modalEl?.querySelector("#cat-list")) renderSettingsModal();   // only while Settings is still the open dialog
-      hubAlert(failure);
-      return false;
-    }
-    return true;
+    res = await write();
   } catch (e) {
     console.error(e);
     hubAlert(failure);
     return false;
   }
+  // The write is stored by here: a re-read that fails is not a failed write.
+  await loadCategories().catch(e => console.error(e));
+  render();
+  // The hub changes nothing, without refusing, on a category the caller may
+  // not write or that is already gone: say so over the list as stored.
+  if (res?.changed === 0) {
+    if (modalEl?.querySelector("#cat-list")) renderSettingsModal();   // only while Settings is still the open dialog
+    hubAlert(failure);
+    return false;
+  }
+  return true;
 }
 
 function saveCategory(id, name, color) {
@@ -671,11 +675,20 @@ function addCategory(name, color) {
 async function deleteCategory(id) {
   if (!await hubConfirm({ message: "Delete this category?", description: "Threads in it will become uncategorised.", confirmLabel: "Delete category", destructive: true })) return false;
   return categoryWrite(async () => {
-    await dbq(`UPDATE app_forum__threads SET category_id=NULL WHERE category_id=?`, [id]);
-    const res = await dbq(`DELETE FROM app_forum__categories WHERE id=?`, [id]);
+    // One atomic batch: the threads are un-categorised only if the category
+    // goes. A category the hub removed nothing for rolls the batch back (409),
+    // which is read as the single statement's `changed: 0`.
+    let res = null;
+    await dbq.batch([
+      { sql: `UPDATE app_forum__threads SET category_id=NULL WHERE category_id=?`, params: [id] },
+      { sql: `DELETE FROM app_forum__categories WHERE id=?`, params: [id], requireChanges: true },
+    ]).catch(e => {
+      if (e?.status !== 409) throw e;
+      res = { changed: 0 };
+    });
     if (categoryFilter === id) {
       categoryFilter = null;
-      await loadThreads();
+      await loadThreads().catch(e => { console.error(e); hubAlert("Couldn’t load the threads — try again."); });
     }
     return res;
   }, "Couldn’t delete the category — try again.");
