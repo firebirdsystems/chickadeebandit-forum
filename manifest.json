@@ -34,15 +34,6 @@
         "reply_count": { "writable_by": [] },
         "reaction_count": { "writable_by": [] },
         "pinned": { "writable_by": ["adult"] }
-      },
-      "retain_days": {
-        "default": 90,
-        "timestamp_column": "created_at",
-        "exempt_when": { "column": "pinned", "values": [1] },
-        "dependent_tables": [
-          { "table": "replies", "foreign_key": "thread_id" },
-          { "table": "reactions", "foreign_key": "thread_id" }
-        ]
       }
     },
     "replies": {
@@ -66,6 +57,17 @@
     },
     "forum_settings": {
       "kind": "adult_writable"
+    }
+  },
+  "retention": {
+    "threads": {
+      "default": 90,
+      "timestamp_column": "created_at",
+      "exempt_when": { "column": "pinned", "values": [1] },
+      "dependent_tables": [
+        { "table": "replies", "foreign_key": "thread_id" },
+        { "table": "reactions", "foreign_key": "thread_id" }
+      ]
     }
   },
   "delete_cascades": {
@@ -143,7 +145,6 @@
     "requires_approval": false
   },
   "resource_limits": {
-    "max_db_bytes": 10485760,
     "max_store_reads_per_day": 2000,
     "max_store_writes_per_day": 500
   },
